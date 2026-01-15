@@ -13,6 +13,8 @@ export default function ProductPage() {
 
     const [product, setProduct] = useState<any>(null);
     const [variations, setVariations] = useState<any[]>([]);
+    const [groupedProducts, setGroupedProducts] = useState<any[]>([]);
+    const [groupedQuantities, setGroupedQuantities] = useState<Record<number, number>>({});
     const [selectedAttributes, setSelectedAttributes] = useState<Record<string, string>>({});
     const [selectedVariation, setSelectedVariation] = useState<any>(null);
     const [currency, setCurrency] = useState({ symbol: '$', position: 'left' });
@@ -57,6 +59,22 @@ export default function ProductPage() {
                         const wcVariations = await getProductVariations(wcProduct.id);
                         setVariations(wcVariations);
                     }
+
+                    if (wcProduct.type === 'grouped') {
+                        const childIds = wcProduct.grouped_products || [];
+                        const children = await Promise.all(
+                            childIds.map((id: number) => getProduct(id))
+                        );
+                        const mappedChildren = children.filter(c => c).map(c => mapWooCommerceProduct(c));
+                        setGroupedProducts(mappedChildren);
+
+                        // Initialize quantities for grouped products
+                        const initQtys: Record<number, number> = {};
+                        mappedChildren.forEach(child => {
+                            initQtys[child.id] = 0;
+                        });
+                        setGroupedQuantities(initQtys);
+                    }
                 }
             } catch (error) {
                 console.error('Error fetching product:', error);
@@ -76,7 +94,10 @@ export default function ProductPage() {
         // Find matching variation
         if (product.type === 'variable') {
             const matching = variations.find(v =>
-                v.attributes.every((attr: any) => newSelected[attr.name] === attr.option)
+                v.attributes.every((attr: any) => {
+                    // Match if attribute option matches exactly or if the variation attribute is empty (means "Any...")
+                    return !attr.option || newSelected[attr.name] === attr.option;
+                })
             );
             setSelectedVariation(matching || null);
 
@@ -90,6 +111,13 @@ export default function ProductPage() {
         }
     };
 
+    const handleGroupedQuantityChange = (id: number, change: number) => {
+        setGroupedQuantities(prev => ({
+            ...prev,
+            [id]: Math.max(0, (prev[id] || 0) + change)
+        }));
+    };
+
     const isWishlisted = product ? isInWishlist(product.id) : false;
 
     const currentPrice = selectedVariation ? parseFloat(selectedVariation.price) : product?.price;
@@ -97,27 +125,73 @@ export default function ProductPage() {
     const currentRegularPrice = selectedVariation ? parseFloat(selectedVariation.regular_price) : product?.price;
     const currentInStock = selectedVariation ? selectedVariation.stock_status === 'instock' : product?.inStock;
 
-    const formatPrice = (price: number) => {
+    const formatPrice = (price: number | string) => {
+        if (typeof price === 'string') {
+            // Handle price ranges like "10.00 - 20.00"
+            const parts = price.split(' - ');
+            if (parts.length === 2) {
+                const minPrice = parseFloat(parts[0]).toFixed(2);
+                const maxPrice = parseFloat(parts[1]).toFixed(2);
+                return `${currency.position === 'left' ? currency.symbol : ''}${minPrice}${currency.position === 'right' ? currency.symbol : ''} - ${currency.position === 'left' ? currency.symbol : ''}${maxPrice}${currency.position === 'right' ? currency.symbol : ''}`;
+            }
+            // If it's a string but not a range, try to parse it as a single number
+            const numPrice = parseFloat(price);
+            if (!isNaN(numPrice)) {
+                return currency.position === 'left' ? `${currency.symbol}${numPrice.toFixed(2)}` : `${numPrice.toFixed(2)}${currency.symbol}`;
+            }
+            return price; // Return as is if not a valid number or range
+        }
         const val = price.toFixed(2);
         return currency.position === 'left' ? `${currency.symbol}${val}` : `${val}${currency.symbol}`;
     };
 
     const handleAddToCart = () => {
         if (!product) return;
-        if (product.type === 'variable' && !selectedVariation) {
-            alert('Please select all options before adding to cart.');
-            return;
-        }
 
-        addToCart({
-            id: product.id,
-            variationId: selectedVariation?.id,
-            name: product.name,
-            price: currentPrice,
-            image: selectedVariation?.image?.src || product.images[0],
-            quantity: quantity,
-            selectedAttributes: selectedVariation ? selectedVariation.attributes : undefined
-        });
+        if (product.type === 'variable') {
+            if (!selectedVariation) {
+                alert('Please select all options before adding to cart.');
+                return;
+            }
+            addToCart({
+                id: product.id,
+                variationId: selectedVariation.id,
+                name: `${product.name} - ${selectedVariation.attributes.map((a: any) => a.option).join(', ')}`,
+                price: currentPrice,
+                image: selectedVariation.image?.src || product.images[0],
+                quantity: quantity,
+                selectedAttributes: selectedVariation.attributes
+            });
+        } else if (product.type === 'grouped') {
+            const itemsToAdd = Object.entries(groupedQuantities).filter(([_, qty]) => qty > 0);
+            if (itemsToAdd.length === 0) {
+                alert('Please select at least one item.');
+                return;
+            }
+
+            itemsToAdd.forEach(([idStr, qty]) => {
+                const childId = parseInt(idStr);
+                const child = groupedProducts.find(p => p.id === childId);
+                if (child) {
+                    addToCart({
+                        id: child.id,
+                        name: child.name,
+                        price: child.price,
+                        image: child.image,
+                        quantity: qty
+                    });
+                }
+            });
+            alert('Items added to cart.');
+        } else {
+            addToCart({
+                id: product.id,
+                name: product.name,
+                price: currentPrice,
+                image: product.images[0],
+                quantity: quantity
+            });
+        }
     };
 
     const toggleWishlist = () => {
@@ -234,7 +308,11 @@ export default function ProductPage() {
 
                         {/* Price */}
                         <div className="flex items-center gap-4 mb-8">
-                            {currentOnSale ? (
+                            {product.type === 'variable' && !selectedVariation ? (
+                                <span className="text-3xl font-bold text-[#B76E79]">
+                                    {formatPrice(product.price_html.replace(/<[^>]*>/g, ''))}
+                                </span>
+                            ) : currentOnSale ? (
                                 <>
                                     <span className="text-4xl font-bold text-[#B76E79]">
                                         {formatPrice(currentPrice)}
@@ -245,10 +323,46 @@ export default function ProductPage() {
                                 </>
                             ) : (
                                 <span className="text-4xl font-bold text-[#B76E79]">
+                                    {product.type === 'grouped' ? 'From ' : ''}
                                     {formatPrice(currentPrice)}
                                 </span>
                             )}
                         </div>
+
+                        {/* Grouped Products Selection */}
+                        {product.type === 'grouped' && (
+                            <div className="space-y-4 mb-8 bg-[#F9F9F9] p-4 rounded-2xl border border-[#FFE5E5]">
+                                <h3 className="text-sm font-bold text-[#2C2C2C] uppercase tracking-wider mb-2">Included Products</h3>
+                                {groupedProducts.map((child) => (
+                                    <div key={child.id} className="flex items-center justify-between gap-4 p-2 bg-white rounded-xl shadow-sm">
+                                        <div className="flex items-center gap-3">
+                                            <img src={child.image} alt={child.name} className="w-12 h-12 object-cover rounded-md" />
+                                            <div>
+                                                <Link href={`/product/${child.id}`} className="font-semibold text-sm hover:text-[#B76E79]">{child.name}</Link>
+                                                <p className="text-xs text-[#B76E79] font-bold">{formatPrice(child.price)}</p>
+                                            </div>
+                                        </div>
+                                        <div className="flex items-center border border-[#FFE5E5] rounded-lg bg-[#F9F9F9]">
+                                            <button
+                                                onClick={() => handleGroupedQuantityChange(child.id, -1)}
+                                                className="px-2 py-1 hover:bg-[#FFE5E5] transition-colors"
+                                            >
+                                                -
+                                            </button>
+                                            <span className="px-3 py-1 text-sm font-semibold min-w-[2rem] text-center">
+                                                {groupedQuantities[child.id] || 0}
+                                            </span>
+                                            <button
+                                                onClick={() => handleGroupedQuantityChange(child.id, 1)}
+                                                className="px-2 py-1 hover:bg-[#FFE5E5] transition-colors"
+                                            >
+                                                +
+                                            </button>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
 
                         {/* Variations Selection */}
                         {product.type === 'variable' && (
@@ -264,8 +378,8 @@ export default function ProductPage() {
                                                     key={option}
                                                     onClick={() => handleAttributeSelect(attr.name, option)}
                                                     className={`px-5 py-2.5 rounded-full border-2 transition-all font-medium ${selectedAttributes[attr.name] === option
-                                                            ? 'border-[#B76E79] bg-[#B76E79] text-white shadow-md'
-                                                            : 'border-[#FFE5E5] text-[#2C2C2C] hover:border-[#B76E79]'
+                                                        ? 'border-[#B76E79] bg-[#B76E79] text-white shadow-md'
+                                                        : 'border-[#FFE5E5] text-[#2C2C2C] hover:border-[#B76E79]'
                                                         }`}
                                                 >
                                                     {option}
@@ -298,28 +412,30 @@ export default function ProductPage() {
                         </div>
 
                         {/* Quantity Selector */}
-                        <div className="mb-8">
-                            <label className="block text-sm font-semibold text-[#2C2C2C] mb-3">
-                                Quantity
-                            </label>
-                            <div className="flex items-center gap-4">
-                                <div className="flex items-center border-2 border-[#FFE5E5] rounded-lg overflow-hidden bg-white">
-                                    <button
-                                        onClick={() => setQuantity(Math.max(1, quantity - 1))}
-                                        className="px-4 py-2 hover:bg-[#FFE5E5] transition-colors"
-                                    >
-                                        -
-                                    </button>
-                                    <span className="px-6 py-2 font-semibold min-w-[3rem] text-center">{quantity}</span>
-                                    <button
-                                        onClick={() => setQuantity(quantity + 1)}
-                                        className="px-4 py-2 hover:bg-[#FFE5E5] transition-colors"
-                                    >
-                                        +
-                                    </button>
+                        {product.type !== 'grouped' && (
+                            <div className="mb-8">
+                                <label className="block text-sm font-semibold text-[#2C2C2C] mb-3">
+                                    Quantity
+                                </label>
+                                <div className="flex items-center gap-4">
+                                    <div className="flex items-center border-2 border-[#FFE5E5] rounded-lg overflow-hidden bg-white">
+                                        <button
+                                            onClick={() => setQuantity(Math.max(1, quantity - 1))}
+                                            className="px-4 py-2 hover:bg-[#FFE5E5] transition-colors"
+                                        >
+                                            -
+                                        </button>
+                                        <span className="px-6 py-2 font-semibold min-w-[3rem] text-center">{quantity}</span>
+                                        <button
+                                            onClick={() => setQuantity(quantity + 1)}
+                                            className="px-4 py-2 hover:bg-[#FFE5E5] transition-colors"
+                                        >
+                                            +
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
-                        </div>
+                        )}
 
                         {/* Action Buttons */}
                         <div className="flex flex-col sm:flex-row gap-4 mb-8">

@@ -57,6 +57,17 @@
   --font-sans: 'Inter', sans-serif;
 }
 
+@layer base {
+
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-rose-gold);
+  }
+}
+
 html {
   scroll-behavior: smooth;
   overflow-x: hidden;

@@ -4,16 +4,18 @@
  * This file contains functions to interact with your WordPress WooCommerce backend.
  * Replace the placeholder values with your actual WooCommerce credentials.
  */
-
 // WooCommerce Configuration
 const WOOCOMMERCE_CONFIG = {
-    url: process.env.NEXT_PUBLIC_WOOCOMMERCE_URL || 'https://ecommerce.local/',
-    consumerKey: process.env.NEXT_PUBLIC_WOOCOMMERCE_KEY || 'ck_e9606279c2965ee75869ac5e6408cbe6f5a33dc4',
-    consumerSecret: process.env.NEXT_PUBLIC_WOOCOMMERCE_SECRET || 'cs_6c225ef6747738d7186a2b2625d74898373f1c7a',
+    url: process.env.NEXT_PUBLIC_WOOCOMMERCE_URL,
+    consumerKey: process.env.NEXT_PUBLIC_WOOCOMMERCE_KEY,
+    consumerSecret: process.env.NEXT_PUBLIC_WOOCOMMERCE_SECRET,
 };
 
 // Base API URL
-const API_BASE_URL = `${WOOCOMMERCE_CONFIG.url}/wp-json/wc/v3`;
+if (!WOOCOMMERCE_CONFIG.url) {
+    console.warn("⚠️ WOOCOMMERCE_URL is missing! Ensure '.env.local' is present and you have restarted the dev server.");
+}
+const API_BASE_URL = `${WOOCOMMERCE_CONFIG.url || ''}/wp-json/wc/v3`;
 
 /**
  * Generate authentication headers for WooCommerce API
@@ -383,6 +385,8 @@ export function mapWooCommerceProduct(p: WooCommerceProduct) {
         price: parseFloat(p.regular_price || p.price || '0'),
         regular_price: p.regular_price,
         sale_price: p.sale_price,
+        price_html: p.price_html,
+        grouped_products: p.grouped_products || [],
         image: p.images?.[0]?.src || 'https://via.placeholder.com/500',
         images: p.images.map(img => img.src),
         category: p.categories?.[0]?.name || 'Uncategorized',
@@ -396,6 +400,27 @@ export function mapWooCommerceProduct(p: WooCommerceProduct) {
         description: p.description,
         short_description: p.short_description
     };
+}
+
+/**
+ * Validate a coupon code
+ */
+export async function validateCoupon(code: string) {
+    try {
+        const response = await fetch(`${API_BASE_URL}/coupons?code=${encodeURIComponent(code)}`, {
+            headers: getAuthHeaders(),
+        });
+
+        if (!response.ok) {
+            throw new Error(`Failed to validate coupon: ${response.statusText}`);
+        }
+
+        const coupons = await response.json();
+        return coupons.length > 0 ? coupons[0] : null;
+    } catch (error) {
+        console.error('Error validating coupon:', error);
+        return null;
+    }
 }
 
 // Type definitions for WooCommerce data
@@ -413,6 +438,8 @@ export interface WooCommerceProduct {
     price: string;
     regular_price: string;
     sale_price: string;
+    price_html: string;
+    grouped_products?: number[];
     date_created: string;
     on_sale: boolean;
     images: Array<{

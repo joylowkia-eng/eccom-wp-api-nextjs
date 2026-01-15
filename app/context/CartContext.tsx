@@ -18,13 +18,14 @@ export interface CartItem {
 interface CartContextType {
     cartItems: CartItem[];
     addToCart: (item: CartItem) => void;
-    removeFromCart: (key: string) => void;
+    removeFromCart: (key: string | number) => void;
     updateQuantity: (key: string, quantity: number) => void;
     clearCart: () => void;
     cartCount: number;
     cartTotal: number;
     isCartOpen: boolean;
     toggleCart: () => void;
+    getItemKey: (item: any) => string;
 }
 
 const CartContext = createContext<CartContextType | undefined>(undefined);
@@ -35,8 +36,10 @@ export function CartProvider({ children }: { children: ReactNode }) {
     const [isMounted, setIsMounted] = useState(false);
 
     // Key generation for cart items to handle variations
-    const getItemKey = (item: CartItem | { id: number; variationId?: number }) => {
-        return item.variationId ? `${item.id}_${item.variationId}` : `${item.id}`;
+    const getItemKey = (item: any) => {
+        const id = item.id;
+        const vId = item.variationId;
+        return (vId && vId !== 0) ? `${id}_${vId}` : `${id}`;
     };
 
     // Load cart from local storage on mount
@@ -76,8 +79,9 @@ export function CartProvider({ children }: { children: ReactNode }) {
         });
     };
 
-    const removeFromCart = (key: string) => {
-        setCartItems(prevItems => prevItems.filter(item => getItemKey(item) !== key));
+    const removeFromCart = (key: string | number) => {
+        const stringKey = String(key);
+        setCartItems(prevItems => prevItems.filter(item => getItemKey(item) !== stringKey));
     };
 
     const updateQuantity = (key: string, quantity: number) => {
@@ -109,7 +113,8 @@ export function CartProvider({ children }: { children: ReactNode }) {
             cartCount,
             cartTotal,
             isCartOpen,
-            toggleCart
+            toggleCart,
+            getItemKey
         }}>
             {children}
         </CartContext.Provider>

@@ -15,6 +15,7 @@ interface ProductCardProps {
     onSale?: boolean;
     salePrice?: number;
     inStock?: boolean;
+    priceHtml?: string;
 }
 
 export default function ProductCard({
@@ -28,6 +29,7 @@ export default function ProductCard({
     onSale = false,
     salePrice,
     inStock = true,
+    priceHtml,
 }: ProductCardProps) {
     const [isHovered, setIsHovered] = useState(false);
     const { addToCart } = useCart();
@@ -191,7 +193,12 @@ export default function ProductCard({
                 {/* Price and Add to Cart */}
                 <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                        {onSale && salePrice ? (
+                        {priceHtml ? (
+                            <span
+                                className="text-lg font-bold text-[#B76E79]"
+                                dangerouslySetInnerHTML={{ __html: priceHtml }}
+                            ></span>
+                        ) : onSale && salePrice ? (
                             <>
                                 <span className="text-xl font-bold text-[#B76E79]">
                                     ${salePrice.toFixed(2)}

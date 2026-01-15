@@ -4,15 +4,14 @@ import Link from 'next/link';
 import { useCart } from '@/app/context/CartContext';
 
 export default function CartPage() {
-    const { cartItems, updateQuantity, removeFromCart, cartTotal } = useCart();
+    const { cartItems, updateQuantity, removeFromCart, cartTotal, getItemKey } = useCart();
 
     const shipping = cartTotal > 100 ? 0 : 15;
     const total = cartTotal + shipping;
 
-    // Use updateQuantity from context which takes (id, quantity)
-    // We need to wrap it to handle the +/- logic here if we want, or just pass quantity
-    const handleQuantityChange = (id: number, currentQty: number, change: number) => {
-        updateQuantity(id, currentQty + change);
+    const handleQuantityChange = (item: any, change: number) => {
+        const key = getItemKey(item);
+        updateQuantity(key, item.quantity + change);
     }
 
     return (
@@ -33,7 +32,7 @@ export default function CartPage() {
                         <div className="flex-1 space-y-[var(--spacing-md)]">
                             {cartItems.map((item) => (
                                 <div
-                                    key={item.id}
+                                    key={getItemKey(item)}
                                     className="bg-white rounded-2xl p-[var(--spacing-md)] shadow-sm flex flex-col sm:flex-row gap-[var(--spacing-md)] items-center"
                                 >
                                     {/* Image */}
@@ -53,17 +52,24 @@ export default function CartPage() {
                                         >
                                             {item.name}
                                         </Link>
-                                        {item.color && <p className="text-sm text-[#9E9E9E] mt-1">{item.color}</p>}
+                                        {item.selectedAttributes && item.selectedAttributes.length > 0 && (
+                                            <div className="flex flex-wrap gap-2 mt-1">
+                                                {item.selectedAttributes.map((attr) => (
+                                                    <span key={attr.name} className="text-xs bg-[#F9F9F9] px-2 py-0.5 rounded text-[#9E9E9E] border border-[#FFE5E5]">
+                                                        {attr.name}: {attr.option}
+                                                    </span>
+                                                ))}
+                                            </div>
+                                        )}
                                         <div className="mt-2 font-bold text-[#B76E79]">
                                             ${item.price.toFixed(2)}
                                         </div>
                                     </div>
 
-                                    {/* Quantity & Actions */}
                                     <div className="flex flex-col items-center gap-4">
                                         <div className="flex items-center border border-[#FFE5E5] rounded-lg">
                                             <button
-                                                onClick={() => handleQuantityChange(item.id, item.quantity, -1)}
+                                                onClick={() => handleQuantityChange(item, -1)}
                                                 className="px-3 py-1 hover:bg-[#FFE5E5] transition-colors"
                                             >
                                                 -
@@ -72,14 +78,14 @@ export default function CartPage() {
                                                 {item.quantity}
                                             </span>
                                             <button
-                                                onClick={() => handleQuantityChange(item.id, item.quantity, 1)}
+                                                onClick={() => handleQuantityChange(item, 1)}
                                                 className="px-3 py-1 hover:bg-[#FFE5E5] transition-colors"
                                             >
                                                 +
                                             </button>
                                         </div>
                                         <button
-                                            onClick={() => removeFromCart(item.id)}
+                                            onClick={() => removeFromCart(getItemKey(item))}
                                             className="text-sm text-[#9E9E9E] hover:text-red-500 transition-colors underline"
                                         >
                                             Remove
