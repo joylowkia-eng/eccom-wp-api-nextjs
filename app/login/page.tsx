@@ -4,29 +4,42 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/app/context/AuthContext';
+import Input from '@/components/ui/Input';
 
 export default function LoginPage() {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
-    const [error, setError] = useState('');
+    const [errors, setErrors] = useState<Record<string, string>>({});
     const [isLoading, setIsLoading] = useState(false);
     const router = useRouter();
     const { login } = useAuth();
 
+    const validateForm = () => {
+        const newErrors: Record<string, string> = {};
+        if (!email) newErrors.email = 'Email is required';
+        else if (!/\S+@\S+\.\S+/.test(email)) newErrors.email = 'Invalid email format';
+        if (!password) newErrors.password = 'Password is required';
+
+        setErrors(newErrors);
+        return Object.keys(newErrors).length === 0;
+    };
+
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        setError('');
+        if (!validateForm()) return;
+
+        setErrors({});
         setIsLoading(true);
 
         try {
             const success = await login(email, password);
             if (success) {
-                router.push('/account'); // Redirect to account dashboard
+                router.push('/account');
             } else {
-                setError('Invalid email or password');
+                setErrors({ form: 'Invalid email or password' });
             }
         } catch (err) {
-            setError('An error occurred. Please try again.');
+            setErrors({ form: 'An error occurred. Please try again.' });
         } finally {
             setIsLoading(false);
         }
@@ -34,57 +47,52 @@ export default function LoginPage() {
 
     return (
         <main className="min-h-screen pt-32 pb-[var(--spacing-2xl)] bg-[#FFF8F0]">
-            <div className="container">
+            <div className="container px-4 sm:px-6 lg:px-8">
                 <div className="max-w-md mx-auto bg-white rounded-3xl p-8 md:p-12 shadow-sm">
                     <h1 className="font-display text-3xl font-bold text-center mb-8 text-[#2C2C2C]">Welcome Back</h1>
 
-                    {error && (
-                        <div className="bg-red-50 text-red-500 text-sm p-4 rounded-xl mb-6 text-center">
-                            {error}
+                    {errors.form && (
+                        <div className="bg-red-50 text-red-500 text-sm p-4 rounded-xl mb-6 text-center animate-fade-in">
+                            {errors.form}
                         </div>
                     )}
 
                     <form onSubmit={handleSubmit} className="space-y-6">
-                        <div>
-                            <label className="block text-sm font-semibold text-[#2C2C2C] mb-2">Email Address</label>
-                            <input
-                                type="email"
-                                value={email}
-                                onChange={(e) => setEmail(e.target.value)}
-                                required
-                                className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#B76E79]/20 focus:border-[#B76E79] transition-all"
-                                placeholder="Enter your email"
-                            />
-                        </div>
+                        <Input
+                            label="Email Address"
+                            type="email"
+                            value={email}
+                            onChange={(e) => setEmail(e.target.value)}
+                            error={errors.email}
+                            placeholder="Enter your email"
+                            required
+                        />
 
-                        <div>
-                            <div className="flex justify-between items-center mb-2">
-                                <label className="block text-sm font-semibold text-[#2C2C2C]">Password</label>
-                                <Link href="/forgot-password" className="text-sm text-[#B76E79] hover:text-[#8B5A5F] transition-colors">
+                        <div className="space-y-2">
+                            <div className="flex justify-between items-center">
+                                <label className="text-sm font-semibold text-[#2C2C2C]">Password</label>
+                                <Link href="/forgot-password" title="Forgot Password" className="text-xs text-[#B76E79] hover:text-[#8B5A5F] transition-colors">
                                     Forgot Password?
                                 </Link>
                             </div>
-                            <input
+                            <Input
                                 type="password"
                                 value={password}
                                 onChange={(e) => setPassword(e.target.value)}
-                                required
-                                className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#B76E79]/20 focus:border-[#B76E79] transition-all"
+                                error={errors.password}
                                 placeholder="Enter your password"
+                                required
                             />
                         </div>
 
                         <button
                             type="submit"
                             disabled={isLoading}
-                            className={`w-full btn-primary flex items-center justify-center ${isLoading ? 'opacity-70 cursor-not-allowed' : ''}`}
+                            className={`w-full btn-primary flex items-center justify-center h-12 ${isLoading ? 'opacity-70 cursor-not-allowed' : 'hover:shadow-lg transform transition-all active:scale-95'}`}
                         >
                             {isLoading ? (
                                 <span className="flex items-center gap-2">
-                                    <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                    </svg>
+                                    <div className="animate-spin h-5 w-5 border-2 border-white border-t-transparent rounded-full"></div>
                                     Signing In...
                                 </span>
                             ) : (

@@ -1,73 +1,69 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useSearchParams } from 'next/navigation';
 import ProductCard from '@/components/ProductCard';
 import { getProducts, getCategories, mapWooCommerceProduct, WooCommerceProduct, WooCommerceCategory } from '@/lib/woocommerce';
 
 export default function ShopPage() {
     const searchParams = useSearchParams();
-    const initialQuery = searchParams.get('search') || '';
-    const initialBrand = searchParams.get('brand') || '';
-    const initialCategory = searchParams.get('category') || 'All';
 
+    // UI State
     const [products, setProducts] = useState<any[]>([]);
     const [categories, setCategories] = useState<string[]>(['All']);
     const [isLoading, setIsLoading] = useState(true);
 
-    const [selectedCategory, setSelectedCategory] = useState(initialCategory);
+    // Filter State
+    const [selectedCategory, setSelectedCategory] = useState(searchParams.get('category') || 'All');
     const [sortBy, setSortBy] = useState('Featured');
     const [priceRange, setPriceRange] = useState([0, 1000]);
-    const [searchQuery, setSearchQuery] = useState(initialQuery);
-    const [brandQuery, setBrandQuery] = useState(initialBrand);
+    const [searchQuery, setSearchQuery] = useState(searchParams.get('search') || '');
+    const [brandQuery, setBrandQuery] = useState(searchParams.get('brand') || '');
 
     const sortOptions = ['Featured', 'Price: Low to High', 'Price: High to Low', 'Newest'];
 
-    useEffect(() => {
-        async function loadData() {
-            setIsLoading(true);
-            try {
-                const [wcProducts, wcCategories] = await Promise.all([
-                    getProducts({ per_page: 100 }),
-                    getCategories()
-                ]);
+    const loadData = useCallback(async () => {
+        setIsLoading(true);
+        try {
+            const [wcProducts, wcCategories] = await Promise.all([
+                getProducts({ per_page: 100 }),
+                getCategories()
+            ]);
 
-                // Map WooCommerce products to our internal format
-                const mappedProducts = wcProducts.map((p: WooCommerceProduct) => mapWooCommerceProduct(p));
-                setProducts(mappedProducts);
-
-                // Update categories list from API
-                const catNames = wcCategories.map((c: WooCommerceCategory) => c.name);
-                setCategories(['All', ...catNames]);
-            } catch (error) {
-                console.error('Failed to load shop data:', error);
-            } finally {
-                setIsLoading(false);
-            }
+            setProducts(wcProducts.map((p: WooCommerceProduct) => mapWooCommerceProduct(p)));
+            setCategories(['All', ...wcCategories.map((c: WooCommerceCategory) => c.name)]);
+        } catch (error) {
+            console.error('Failed to load shop data:', error);
+        } finally {
+            setIsLoading(false);
         }
-
-        loadData();
     }, []);
+
+    useEffect(() => {
+        loadData();
+    }, [loadData]);
 
     // Sync state with URL if it changes
     useEffect(() => {
         setSearchQuery(searchParams.get('search') || '');
         setBrandQuery(searchParams.get('brand') || '');
-        const urlCat = searchParams.get('category');
-        if (urlCat) setSelectedCategory(urlCat);
+        setSelectedCategory(searchParams.get('category') || 'All');
     }, [searchParams]);
 
-    const filteredProducts = products
-        .filter(product => selectedCategory === 'All' || product.categories.includes(selectedCategory))
-        .filter(product => product.price >= priceRange[0] && product.price <= priceRange[1])
-        .filter(product => !brandQuery || (product.brand && product.brand === brandQuery))
-        .filter(product => !searchQuery || product.name.toLowerCase().includes(searchQuery.toLowerCase()))
-        .sort((a, b) => {
-            if (sortBy === 'Price: Low to High') return a.price - b.price;
-            if (sortBy === 'Price: High to Low') return b.price - a.price;
-            if (sortBy === 'Newest') return (b.isNew ? 1 : 0) - (a.isNew ? 1 : 0);
-            return 0;
-        });
+    // Memoized Filtered Products - Only recalculates when filters or products change
+    const filteredProducts = useMemo(() => {
+        return products
+            .filter(p => selectedCategory === 'All' || p.categories.includes(selectedCategory))
+            .filter(p => p.price >= priceRange[0] && p.price <= priceRange[1])
+            .filter(p => !brandQuery || p.brand === brandQuery)
+            .filter(p => !searchQuery || p.name.toLowerCase().includes(searchQuery.toLowerCase()))
+            .sort((a, b) => {
+                if (sortBy === 'Price: Low to High') return a.price - b.price;
+                if (sortBy === 'Price: High to Low') return b.price - a.price;
+                if (sortBy === 'Newest') return (b.isNew ? 1 : 0) - (a.isNew ? 1 : 0);
+                return 0;
+            });
+    }, [products, selectedCategory, priceRange, brandQuery, searchQuery, sortBy]);
 
     return (
         <main className="min-h-screen pt-32 pb-[var(--spacing-2xl)] bg-[#FFF8F0]">
@@ -118,7 +114,7 @@ export default function ShopPage() {
                                         className="w-full accent-[#B76E79]"
                                     />
                                     <div className="flex justify-between text-sm text-[#9E9E9E]">
-                                        <span>${priceRange[0]}</span>
+                                        <span>$0</span>
                                         <span>${priceRange[1]}</span>
                                     </div>
                                 </div>

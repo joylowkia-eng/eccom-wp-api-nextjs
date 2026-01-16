@@ -3,24 +3,27 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/app/context/AuthContext';
-import { getCustomer, getCurrencySettings } from '@/lib/woocommerce';
+import { getCustomer, getCurrencySettings, getCustomerOrders } from '@/lib/woocommerce';
 
 export default function AccountPage() {
     const { user } = useAuth();
     const [customer, setCustomer] = useState<any>(null);
     const [currency, setCurrency] = useState({ symbol: '$', position: 'left' });
     const [isLoading, setIsLoading] = useState(true);
+    const [orderCount, setOrderCount] = useState(0);
 
     useEffect(() => {
         async function loadProfile() {
             if (!user?.id) return;
             try {
-                const [data, currencyData] = await Promise.all([
+                const [data, currencyData, orders] = await Promise.all([
                     getCustomer(parseInt(user.id)),
-                    getCurrencySettings()
+                    getCurrencySettings(),
+                    getCustomerOrders(parseInt(user.id))
                 ]);
                 setCustomer(data);
                 setCurrency(currencyData);
+                setOrderCount(orders.length);
             } catch (error) {
                 console.error("Error loading account details", error);
             } finally {
@@ -48,7 +51,7 @@ export default function AccountPage() {
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
                     <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
                         <p className="text-sm text-gray-500 mb-1">Total Orders</p>
-                        <p className="text-2xl font-bold">{customer?.orders_count || 0}</p>
+                        <p className="text-2xl font-bold">{orderCount}</p>
                     </div>
                 </div>
 

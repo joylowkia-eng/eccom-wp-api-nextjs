@@ -177,55 +177,57 @@ export default function Header() {
                         </Link>
 
                         <div className="hidden md:block relative group/account">
-                            <Link
-                                href={isAuthenticated ? "/account" : "/login"}
-                                className="p-2 hover:bg-[#FFE5E5] rounded-full transition-colors duration-300 flex items-center gap-2"
-                                aria-label="Account"
-                            >
-                                <svg
-                                    className="w-6 h-6 text-[#2C2C2C]"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    viewBox="0 0 24 24"
-                                >
-                                    <path
-                                        strokeLinecap="round"
-                                        strokeLinejoin="round"
-                                        strokeWidth={2}
-                                        d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
-                                    />
-                                </svg>
-                                {isAuthenticated && <span className="text-xs font-semibold text-[#B76E79] max-w-[80px] truncate">{user?.name}</span>}
-                            </Link>
-
-                            {/* Account Dropdown */}
-                            {isAuthenticated && (
-                                <div className="absolute right-0 top-full pt-2 opacity-0 invisible group-hover/account:opacity-100 group-hover/account:visible transition-all duration-300 z-50">
-                                    <div className="bg-white rounded-2xl shadow-xl border border-[#FFE5E5] overflow-hidden min-w-[180px]">
-                                        <div className="p-4 border-b border-[#FFE5E5] bg-[#FFF8F0]">
-                                            <p className="text-sm font-bold text-[#2C2C2C] truncate">{user?.name}</p>
-                                            <p className="text-xs text-[#9E9E9E] truncate">{user?.email}</p>
+                            {isAuthenticated ? (
+                                <>
+                                    <Link
+                                        href="/account"
+                                        className="p-2 hover:bg-[#FFE5E5] rounded-full transition-colors duration-300 flex items-center gap-2"
+                                        aria-label="Account"
+                                    >
+                                        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#B76E79] to-[#D4A5A5] flex items-center justify-center text-white text-xs font-bold shadow-sm">
+                                            {user?.name?.charAt(0).toUpperCase() || 'U'}
                                         </div>
-                                        <div className="p-2">
-                                            <Link href="/account" className="block px-4 py-2 text-sm text-[#2C2C2C] hover:bg-[#FFE5E5] rounded-lg transition-colors">
-                                                Dashboard
-                                            </Link>
-                                            <Link href="/account/orders" className="block px-4 py-2 text-sm text-[#2C2C2C] hover:bg-[#FFE5E5] rounded-lg transition-colors">
-                                                My Orders
-                                            </Link>
-                                            <hr className="my-2 border-[#FFE5E5]" />
-                                            <button
-                                                onClick={logout}
-                                                className="w-full text-left px-4 py-2 text-sm text-red-500 hover:bg-red-50 rounded-lg transition-colors flex items-center gap-2"
-                                            >
-                                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4-4H7m6 4v1H3v1h14V9z" />
-                                                </svg>
-                                                Sign Out
-                                            </button>
+                                        <span className="text-sm font-semibold text-[#2C2C2C] max-w-[100px] truncate">{user?.name}</span>
+                                    </Link>
+
+                                    {/* Account Dropdown */}
+                                    <div className="absolute right-0 top-full pt-2 opacity-0 invisible group-hover/account:opacity-100 group-hover/account:visible transition-all duration-300 z-50">
+                                        <div className="bg-white rounded-2xl shadow-xl border border-[#FFE5E5] overflow-hidden min-w-[200px]">
+                                            <div className="p-4 border-b border-[#FFE5E5] bg-[#FFF8F0]">
+                                                <p className="text-sm font-bold text-[#2C2C2C] truncate">{user?.name}</p>
+                                                <p className="text-xs text-[#9E9E9E] truncate">{user?.email}</p>
+                                            </div>
+                                            <div className="p-2">
+                                                <Link href="/account" className="block px-4 py-2 text-sm text-[#2C2C2C] hover:bg-[#FFE5E5] rounded-lg transition-colors">
+                                                    Dashboard
+                                                </Link>
+                                                <Link href="/account/orders" className="block px-4 py-2 text-sm text-[#2C2C2C] hover:bg-[#FFE5E5] rounded-lg transition-colors">
+                                                    My Orders
+                                                </Link>
+                                                <Link href="/account/addresses" className="block px-4 py-2 text-sm text-[#2C2C2C] hover:bg-[#FFE5E5] rounded-lg transition-colors">
+                                                    Addresses
+                                                </Link>
+                                                <hr className="my-2 border-[#FFE5E5]" />
+                                                <button
+                                                    onClick={logout}
+                                                    className="w-full text-left px-4 py-2 text-sm text-red-500 hover:bg-red-50 rounded-lg transition-colors flex items-center gap-2"
+                                                >
+                                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4-4H7m6 4v1H3v1h14V9z" />
+                                                    </svg>
+                                                    Sign Out
+                                                </button>
+                                            </div>
                                         </div>
                                     </div>
-                                </div>
+                                </>
+                            ) : (
+                                <Link
+                                    href="/login"
+                                    className="px-6 py-2 bg-[#2C2C2C] text-white text-sm font-bold rounded-full hover:bg-black transition-all hover:shadow-lg active:scale-95 flex items-center"
+                                >
+                                    Sign In
+                                </Link>
                             )}
                         </div>
 
@@ -278,6 +280,35 @@ export default function Header() {
                                     {link.name}
                                 </Link>
                             ))}
+                            <hr className="border-[#FFE5E5]" />
+                            {isAuthenticated ? (
+                                <>
+                                    <Link
+                                        href="/account"
+                                        className="font-bold text-[#B76E79]"
+                                        onClick={() => setIsMobileMenuOpen(false)}
+                                    >
+                                        My Account ({user?.name})
+                                    </Link>
+                                    <button
+                                        onClick={() => {
+                                            logout();
+                                            setIsMobileMenuOpen(false);
+                                        }}
+                                        className="text-left text-red-500 font-medium"
+                                    >
+                                        Sign Out
+                                    </button>
+                                </>
+                            ) : (
+                                <Link
+                                    href="/login"
+                                    className="font-bold text-[#2C2C2C]"
+                                    onClick={() => setIsMobileMenuOpen(false)}
+                                >
+                                    Sign In
+                                </Link>
+                            )}
                         </nav>
                     </div>
                 )}

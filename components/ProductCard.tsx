@@ -1,8 +1,11 @@
 'use client';
-import { useState } from 'react';
+import { useState, memo, useCallback } from 'react';
 import Link from 'next/link';
+import NextImage from 'next/image';
 import { useCart } from '@/app/context/CartContext';
 import { useWishlist } from '@/app/context/WishlistContext';
+import { useCurrency } from '@/app/context/CurrencyContext';
+import QuickViewModal from './QuickViewModal';
 
 interface ProductCardProps {
     id: number;
@@ -18,7 +21,7 @@ interface ProductCardProps {
     priceHtml?: string;
 }
 
-export default function ProductCard({
+function ProductCard({
     id,
     name,
     price,
@@ -32,11 +35,13 @@ export default function ProductCard({
     priceHtml,
 }: ProductCardProps) {
     const [isHovered, setIsHovered] = useState(false);
+    const [isQuickViewOpen, setIsQuickViewOpen] = useState(false);
     const { addToCart } = useCart();
     const { addToWishlist, removeFromWishlist, isInWishlist } = useWishlist();
+    const { formatPrice } = useCurrency();
     const isWishlisted = isInWishlist(id);
 
-    const handleAddToCart = (e: React.MouseEvent) => {
+    const handleAddToCart = useCallback((e: React.MouseEvent) => {
         e.preventDefault();
         if (!inStock) return;
         addToCart({
@@ -46,9 +51,9 @@ export default function ProductCard({
             image,
             quantity: 1,
         });
-    };
+    }, [id, name, price, onSale, salePrice, image, inStock, addToCart]);
 
-    const toggleWishlist = (e: React.MouseEvent) => {
+    const toggleWishlist = useCallback((e: React.MouseEvent) => {
         e.preventDefault();
         if (isWishlisted) {
             removeFromWishlist(id);
@@ -66,7 +71,7 @@ export default function ProductCard({
                 salePrice
             });
         }
-    };
+    }, [id, name, price, image, inStock, category, rating, isNew, onSale, salePrice, isWishlisted, addToWishlist, removeFromWishlist]);
 
     return (
         <div
@@ -99,7 +104,7 @@ export default function ProductCard({
                 className={`absolute top-4 right-4 z-10 flex flex-col gap-2 transition-all duration-300 ${isHovered ? 'opacity-100 translate-x-0' : 'opacity-0 translate-x-4'
                     }`}
             >
-                {/* Wishlist Button - Hidden if In Stock AND Not in Wishlist (per user request) */}
+                {/* Wishlist Button */}
                 {(!inStock || isWishlisted) && (
                     <button
                         onClick={toggleWishlist}
@@ -124,6 +129,10 @@ export default function ProductCard({
                 )}
 
                 <button
+                    onClick={(e) => {
+                        e.preventDefault();
+                        setIsQuickViewOpen(true);
+                    }}
                     className="w-10 h-10 bg-white rounded-full flex items-center justify-center shadow-lg hover:bg-[#FFE5E5] transition-colors duration-300 text-[#B76E79]"
                     aria-label="Quick view"
                 >
@@ -152,10 +161,12 @@ export default function ProductCard({
             {/* Product Image */}
             <Link href={`/product/${id}`}>
                 <div className="image-zoom-container aspect-[4/5] bg-[#F5F5F5] w-full relative">
-                    <img
+                    <NextImage
                         src={image}
                         alt={name}
-                        className="absolute inset-0 w-full h-full object-cover"
+                        fill
+                        className="object-cover"
+                        sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
                     />
                 </div>
             </Link>
@@ -201,15 +212,15 @@ export default function ProductCard({
                         ) : onSale && salePrice ? (
                             <>
                                 <span className="text-xl font-bold text-[#B76E79]">
-                                    ${salePrice.toFixed(2)}
+                                    {formatPrice(salePrice)}
                                 </span>
                                 <span className="text-sm text-[#9E9E9E] line-through">
-                                    ${price.toFixed(2)}
+                                    {formatPrice(price)}
                                 </span>
                             </>
                         ) : (
                             <span className="text-xl font-bold text-[#2C2C2C]">
-                                ${price.toFixed(2)}
+                                {formatPrice(price)}
                             </span>
                         )}
                     </div>
@@ -239,6 +250,14 @@ export default function ProductCard({
                     </button>
                 </div>
             </div>
+
+            <QuickViewModal
+                productId={id}
+                isOpen={isQuickViewOpen}
+                onClose={() => setIsQuickViewOpen(false)}
+            />
         </div>
     );
 }
+
+export default memo(ProductCard);

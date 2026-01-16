@@ -5,11 +5,14 @@ import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { useCart } from '@/app/context/CartContext';
 import { useWishlist } from '@/app/context/WishlistContext';
-import { getProduct, getProductVariations, mapWooCommerceProduct, getCurrencySettings } from '@/lib/woocommerce';
+import { useCurrency } from '@/app/context/CurrencyContext';
+import { getProduct, getProductVariations, mapWooCommerceProduct } from '@/lib/woocommerce';
+import NextImage from 'next/image';
 
 export default function ProductPage() {
     const params = useParams();
     const productId = params.id as string;
+    const { formatPrice } = useCurrency();
 
     const [product, setProduct] = useState<any>(null);
     const [variations, setVariations] = useState<any[]>([]);
@@ -17,7 +20,6 @@ export default function ProductPage() {
     const [groupedQuantities, setGroupedQuantities] = useState<Record<number, number>>({});
     const [selectedAttributes, setSelectedAttributes] = useState<Record<string, string>>({});
     const [selectedVariation, setSelectedVariation] = useState<any>(null);
-    const [currency, setCurrency] = useState({ symbol: '$', position: 'left' });
 
     const [isLoading, setIsLoading] = useState(true);
     const [selectedImage, setSelectedImage] = useState(0);
@@ -31,20 +33,33 @@ export default function ProductPage() {
         async function loadData() {
             setIsLoading(true);
             try {
-                const [wcProduct, currencyData] = await Promise.all([
-                    getProduct(parseInt(productId)),
-                    getCurrencySettings()
-                ]);
-
-                setCurrency(currencyData);
+                const wcProduct = await getProduct(parseInt(productId));
 
                 if (wcProduct) {
                     const mapped = mapWooCommerceProduct(wcProduct);
+
+                    // Fetch additional data in parallel
+                    const promises: Promise<any>[] = [];
+                    if (wcProduct.type === 'variable') {
+                        promises.push(getProductVariations(wcProduct.id));
+                    } else {
+                        promises.push(Promise.resolve([]));
+                    }
+
+                    if (wcProduct.type === 'grouped') {
+                        const childIds = wcProduct.grouped_products || [];
+                        promises.push(Promise.all(childIds.map((id: number) => getProduct(id))));
+                    } else {
+                        promises.push(Promise.resolve([]));
+                    }
+
+                    const [wcVariations, children] = await Promise.all(promises);
+
                     setProduct({
                         ...mapped,
-                        description: wcProduct.description.replace(/<[^>]*>/g, ''),
-                        short_description: wcProduct.short_description.replace(/<[^>]*>/g, ''),
-                        images: wcProduct.images.map((img: any) => img.src),
+                        description: (wcProduct.description || ''),
+                        short_description: (wcProduct.short_description || '').replace(/<[^>]*>/g, ''),
+                        images: wcProduct.images?.map((img: any) => img.src) || [],
                         reviews: wcProduct.rating_count || 0,
                         features: wcProduct.meta_data?.find((m: any) => m.key === '_product_features')?.value || [
                             'Premium quality ingredients',
@@ -55,22 +70,13 @@ export default function ProductPage() {
                         ingredients: wcProduct.meta_data?.find((m: any) => m.key === '_product_ingredients')?.value || 'Ingredients available on packaging.'
                     });
 
-                    if (wcProduct.type === 'variable') {
-                        const wcVariations = await getProductVariations(wcProduct.id);
-                        setVariations(wcVariations);
-                    }
+                    if (wcVariations) setVariations(wcVariations);
 
-                    if (wcProduct.type === 'grouped') {
-                        const childIds = wcProduct.grouped_products || [];
-                        const children = await Promise.all(
-                            childIds.map((id: number) => getProduct(id))
-                        );
-                        const mappedChildren = children.filter(c => c).map(c => mapWooCommerceProduct(c));
+                    if (children) {
+                        const mappedChildren = children.filter((c: any) => c).map((c: any) => mapWooCommerceProduct(c));
                         setGroupedProducts(mappedChildren);
-
-                        // Initialize quantities for grouped products
                         const initQtys: Record<number, number> = {};
-                        mappedChildren.forEach(child => {
+                        mappedChildren.forEach((child: any) => {
                             initQtys[child.id] = 0;
                         });
                         setGroupedQuantities(initQtys);
@@ -125,25 +131,6 @@ export default function ProductPage() {
     const currentRegularPrice = selectedVariation ? parseFloat(selectedVariation.regular_price) : product?.price;
     const currentInStock = selectedVariation ? selectedVariation.stock_status === 'instock' : product?.inStock;
 
-    const formatPrice = (price: number | string) => {
-        if (typeof price === 'string') {
-            // Handle price ranges like "10.00 - 20.00"
-            const parts = price.split(' - ');
-            if (parts.length === 2) {
-                const minPrice = parseFloat(parts[0]).toFixed(2);
-                const maxPrice = parseFloat(parts[1]).toFixed(2);
-                return `${currency.position === 'left' ? currency.symbol : ''}${minPrice}${currency.position === 'right' ? currency.symbol : ''} - ${currency.position === 'left' ? currency.symbol : ''}${maxPrice}${currency.position === 'right' ? currency.symbol : ''}`;
-            }
-            // If it's a string but not a range, try to parse it as a single number
-            const numPrice = parseFloat(price);
-            if (!isNaN(numPrice)) {
-                return currency.position === 'left' ? `${currency.symbol}${numPrice.toFixed(2)}` : `${numPrice.toFixed(2)}${currency.symbol}`;
-            }
-            return price; // Return as is if not a valid number or range
-        }
-        const val = price.toFixed(2);
-        return currency.position === 'left' ? `${currency.symbol}${val}` : `${val}${currency.symbol}`;
-    };
 
     const handleAddToCart = () => {
         if (!product) return;
@@ -250,11 +237,14 @@ export default function ProductPage() {
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-[var(--spacing-md)] mb-[var(--spacing-2xl)] bg-white p-[var(--spacing-lg)] md:p-[var(--spacing-xl)] rounded-3xl shadow-sm">
                     {/* Product Images */}
                     <div>
-                        <div className="mb-4 rounded-2xl overflow-hidden bg-[#F5F5F5] aspect-square">
-                            <img
+                        <div className="mb-4 rounded-2xl overflow-hidden bg-[#F5F5F5] aspect-square relative">
+                            <NextImage
                                 src={product.images[selectedImage]}
                                 alt={product.name}
-                                className="w-full h-full object-cover transition-all duration-500"
+                                fill
+                                className="object-cover transition-all duration-500"
+                                sizes="(max-width: 1024px) 100vw, 50vw"
+                                priority
                             />
                         </div>
                         <div className="grid grid-cols-4 gap-4">
@@ -267,11 +257,15 @@ export default function ProductPage() {
                                         : 'ring-2 ring-transparent hover:ring-[#D4A5A5]'
                                         } transition-all duration-300`}
                                 >
-                                    <img
-                                        src={image}
-                                        alt={`${product.name} ${index + 1}`}
-                                        className="w-full h-full object-cover"
-                                    />
+                                    <div className="w-full h-full relative">
+                                        <NextImage
+                                            src={image}
+                                            alt={`${product.name} ${index + 1}`}
+                                            fill
+                                            className="object-cover"
+                                            sizes="(max-width: 768px) 25vw, 150px"
+                                        />
+                                    </div>
                                 </button>
                             ))}
                         </div>
@@ -336,7 +330,9 @@ export default function ProductPage() {
                                 {groupedProducts.map((child) => (
                                     <div key={child.id} className="flex items-center justify-between gap-4 p-2 bg-white rounded-xl shadow-sm">
                                         <div className="flex items-center gap-3">
-                                            <img src={child.image} alt={child.name} className="w-12 h-12 object-cover rounded-md" />
+                                            <div className="w-12 h-12 relative flex-shrink-0">
+                                                <NextImage src={child.image} alt={child.name} fill className="object-cover rounded-md" sizes="48px" />
+                                            </div>
                                             <div>
                                                 <Link href={`/product/${child.id}`} className="font-semibold text-sm hover:text-[#B76E79]">{child.name}</Link>
                                                 <p className="text-xs text-[#B76E79] font-bold">{formatPrice(child.price)}</p>

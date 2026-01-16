@@ -2,8 +2,8 @@
  * WooCommerce API Integration
  * 
  * This file contains functions to interact with your WordPress WooCommerce backend.
- * Replace the placeholder values with your actual WooCommerce credentials.
  */
+
 // WooCommerce Configuration
 const WOOCOMMERCE_CONFIG = {
     url: process.env.NEXT_PUBLIC_WOOCOMMERCE_URL,
@@ -13,7 +13,7 @@ const WOOCOMMERCE_CONFIG = {
 
 // Base API URL
 if (!WOOCOMMERCE_CONFIG.url) {
-    console.warn("⚠️ WOOCOMMERCE_URL is missing! Ensure '.env.local' is present and you have restarted the dev server.");
+    console.warn("⚠️ WOOCOMMERCE_URL is missing! Ensure '.env.local' is present.");
 }
 const API_BASE_URL = `${WOOCOMMERCE_CONFIG.url || ''}/wp-json/wc/v3`;
 
@@ -22,16 +22,60 @@ const API_BASE_URL = `${WOOCOMMERCE_CONFIG.url || ''}/wp-json/wc/v3`;
  */
 function getAuthHeaders() {
     const auth = btoa(`${WOOCOMMERCE_CONFIG.consumerKey}:${WOOCOMMERCE_CONFIG.consumerSecret}`);
-
     return {
         'Authorization': `Basic ${auth}`,
         'Content-Type': 'application/json',
     };
 }
 
+const clientCache = new Map<string, { data: any, timestamp: number }>();
+
+/**
+ * Centralized fetch helper for WooCommerce API
+ */
+async function fetchWooCommerce(endpoint: string, options: RequestInit & { revalidate?: number | false } = {}) {
+    const { revalidate = 60, ...fetchOptions } = options;
+    const url = endpoint.startsWith('http') ? endpoint : `${API_BASE_URL}${endpoint}`;
+
+    // Simple client-side cache for GET requests
+    if (typeof window !== 'undefined' && (!fetchOptions.method || fetchOptions.method === 'GET')) {
+        const cached = clientCache.get(url);
+        if (cached && Date.now() - cached.timestamp < (Number(revalidate) || 60) * 1000) {
+            return cached.data;
+        }
+    }
+
+    try {
+        const response = await fetch(url, {
+            ...fetchOptions,
+            headers: {
+                ...getAuthHeaders(),
+                ...fetchOptions.headers,
+            },
+            ...(revalidate !== undefined && { next: { revalidate } }),
+        });
+
+        if (!response.ok) {
+            const error = await response.json().catch(() => ({ message: response.statusText }));
+            throw new Error(error.message || `WooCommerce API Error: ${response.status}`);
+        }
+
+        const data = await response.json();
+
+        // Update client-side cache
+        if (typeof window !== 'undefined' && (!fetchOptions.method || fetchOptions.method === 'GET')) {
+            clientCache.set(url, { data, timestamp: Date.now() });
+        }
+
+        return data;
+    } catch (error) {
+        console.error(`WooCommerce API Error (${endpoint}):`, error);
+        throw error;
+    }
+}
+
 /**
  * Fetch products from WooCommerce
- * @param params - Query parameters (per_page, page, category, etc.)
  */
 export async function getProducts(params: {
     per_page?: number;
@@ -40,125 +84,62 @@ export async function getProducts(params: {
     featured?: boolean;
     on_sale?: boolean;
 } = {}) {
-    try {
-        const queryParams = new URLSearchParams({
-            per_page: String(params.per_page || 10),
-            page: String(params.page || 1),
-            ...(params.category && { category: params.category }),
-            ...(params.featured && { featured: 'true' }),
-            ...(params.on_sale && { on_sale: 'true' }),
-        });
+    const queryParams = new URLSearchParams({
+        per_page: String(params.per_page || 10),
+        page: String(params.page || 1),
+        ...(params.category && { category: params.category }),
+        ...(params.featured && { featured: 'true' }),
+        ...(params.on_sale && { on_sale: 'true' }),
+    });
 
-        const response = await fetch(`${API_BASE_URL}/products?${queryParams}`, {
-            headers: getAuthHeaders(),
-            next: { revalidate: 60 }, // Revalidate every 60 seconds
-        });
-
-        if (!response.ok) {
-            throw new Error(`Failed to fetch products: ${response.statusText}`);
-        }
-
-        return await response.json();
-    } catch (error) {
-        console.error('Error fetching products:', error);
-        return [];
-    }
+    return fetchWooCommerce(`/products?${queryParams}`).catch(() => []);
 }
 
 /**
  * Fetch a single product by ID
- * @param id - Product ID
  */
 export async function getProduct(id: number) {
-    try {
-        const response = await fetch(`${API_BASE_URL}/products/${id}`, {
-            headers: getAuthHeaders(),
-            next: { revalidate: 60 },
-        });
-
-        if (!response.ok) {
-            throw new Error(`Failed to fetch product: ${response.statusText}`);
-        }
-
-        return await response.json();
-    } catch (error) {
-        console.error('Error fetching product:', error);
-        return null;
-    }
+    return fetchWooCommerce(`/products/${id}`).catch(() => null);
 }
 
 /**
  * Fetch product categories
  */
 export async function getCategories() {
-    try {
-        const response = await fetch(`${API_BASE_URL}/products/categories`, {
-            headers: getAuthHeaders(),
-            next: { revalidate: 3600 }, // Revalidate every hour
-        });
-
-        if (!response.ok) {
-            throw new Error(`Failed to fetch categories: ${response.statusText}`);
-        }
-
-        return await response.json();
-    } catch (error) {
-        console.error('Error fetching categories:', error);
-        return [];
-    }
+    return fetchWooCommerce(`/products/categories`, { revalidate: 3600 }).catch(() => []);
 }
 
 /**
  * Create an order
- * @param orderData - Order data
  */
-export async function createOrder(orderData: {
-    payment_method: string;
-    payment_method_title: string;
-    set_paid: boolean;
-    billing: any;
-    shipping: any;
-    line_items: any[];
-    customer_id?: number;
-}) {
-    try {
-        const response = await fetch(`${API_BASE_URL}/orders`, {
-            method: 'POST',
-            headers: getAuthHeaders(),
-            body: JSON.stringify(orderData),
-        });
+export async function createOrder(orderData: any) {
+    return fetchWooCommerce(`/orders`, {
+        method: 'POST',
+        body: JSON.stringify(orderData),
+        revalidate: false
+    });
+}
 
-        if (!response.ok) {
-            throw new Error(`Failed to create order: ${response.statusText}`);
-        }
-
-        return await response.json();
-    } catch (error) {
-        console.error('Error creating order:', error);
-        throw error;
-    }
+/**
+ * Create a new customer
+ */
+export async function createCustomer(data: any) {
+    return fetchWooCommerce(`/customers`, {
+        method: 'POST',
+        body: JSON.stringify(data),
+        revalidate: false
+    });
 }
 
 /**
  * Update customer data
  */
 export async function updateCustomer(id: string, data: any) {
-    try {
-        const response = await fetch(`${API_BASE_URL}/customers/${id}`, {
-            method: 'PUT',
-            headers: getAuthHeaders(),
-            body: JSON.stringify(data),
-        });
-
-        if (!response.ok) {
-            throw new Error(`Failed to update customer: ${response.statusText}`);
-        }
-
-        return await response.json();
-    } catch (error) {
-        console.error('Error updating customer:', error);
-        return null;
-    }
+    return fetchWooCommerce(`/customers/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify(data),
+        revalidate: false
+    });
 }
 
 /**
@@ -166,102 +147,62 @@ export async function updateCustomer(id: string, data: any) {
  */
 export async function getCustomerByEmail(email: string) {
     try {
-        const response = await fetch(`${API_BASE_URL}/customers?email=${encodeURIComponent(email)}`, {
-            headers: getAuthHeaders(),
-        });
+        const customers = await fetchWooCommerce(`/customers?email=${encodeURIComponent(email)}`);
 
-        if (!response.ok) {
-            throw new Error(`Failed to fetch customer: ${response.statusText}`);
+        if (!customers || customers.length === 0) {
+            const searchResults = await fetchWooCommerce(`/customers?search=${encodeURIComponent(email)}`);
+            const exactMatch = searchResults.find((c: any) =>
+                c.email.toLowerCase() === email.toLowerCase()
+            );
+            return exactMatch || null;
         }
 
-        const customers = await response.json();
-        return customers.length > 0 ? customers[0] : null;
-    } catch (error) {
-        console.error('Error fetching customer by email:', error);
+        return customers[0];
+    } catch {
         return null;
     }
 }
 
 /**
  * Get customer by ID
- * @param id - Customer ID
  */
 export async function getCustomer(id: number) {
-    try {
-        const response = await fetch(`${API_BASE_URL}/customers/${id}`, {
-            headers: getAuthHeaders(),
-        });
-
-        if (!response.ok) {
-            throw new Error(`Failed to fetch customer: ${response.statusText}`);
-        }
-
-        return await response.json();
-    } catch (error) {
-        console.error('Error fetching customer:', error);
-        return null;
-    }
+    return fetchWooCommerce(`/customers/${id}`).catch(() => null);
 }
 
 /**
  * Search products
  */
 export async function searchProducts(search: string) {
-    try {
-        const response = await fetch(`${API_BASE_URL}/products?search=${encodeURIComponent(search)}`, {
-            headers: getAuthHeaders(),
-        });
-
-        if (!response.ok) {
-            throw new Error(`Failed to search products: ${response.statusText}`);
-        }
-
-        return await response.json();
-    } catch (error) {
-        console.error('Error searching products:', error);
-        return [];
-    }
+    return fetchWooCommerce(`/products?search=${encodeURIComponent(search)}`).catch(() => []);
 }
 
 /**
  * Fetch a single order by ID
  */
 export async function getOrder(id: string) {
-    try {
-        const response = await fetch(`${API_BASE_URL}/orders/${id}`, {
-            headers: getAuthHeaders(),
-        });
+    return fetchWooCommerce(`/orders/${id}`, { revalidate: 0 }).catch(() => null);
+}
 
-        if (!response.ok) {
-            throw new Error(`Failed to fetch order: ${response.statusText}`);
-        }
-
-        return await response.json();
-    } catch (error) {
-        console.error('Error fetching order:', error);
-        return null;
-    }
+/**
+ * Fetch orders for a specific customer
+ */
+export async function getCustomerOrders(customerId: number) {
+    return fetchWooCommerce(`/orders?customer=${customerId}`, { revalidate: 0 }).catch(() => []);
 }
 
 /**
  * Fetch product variations
  */
 export async function getProductVariations(productId: number) {
-    try {
-        const response = await fetch(`${API_BASE_URL}/products/${productId}/variations`, {
-            headers: getAuthHeaders(),
-            next: { revalidate: 60 },
-        });
+    return fetchWooCommerce(`/products/${productId}/variations`).catch(() => []);
+}
 
-        if (!response.ok) {
-            throw new Error(`Failed to fetch variations: ${response.statusText}`);
-        }
-
-        return await response.json();
-    } catch (error) {
-        console.error('Error fetching variations:', error);
-        return [];
-    }
+/**
+ * Fetch product reviews
+ */
+export async function getProductReviews(productId: number) {
+    return fetchWooCommerce(`/products/reviews?product=${productId}`).catch(() => []);
 }
 
 /**
@@ -269,18 +210,9 @@ export async function getProductVariations(productId: number) {
  */
 export async function getPaymentGateways() {
     try {
-        const response = await fetch(`${API_BASE_URL}/payment_gateways`, {
-            headers: getAuthHeaders(),
-        });
-
-        if (!response.ok) {
-            throw new Error(`Failed to fetch payment gateways: ${response.statusText}`);
-        }
-
-        const data = await response.json();
+        const data = await fetchWooCommerce(`/payment_gateways`);
         return data.filter((gateway: any) => gateway.enabled);
-    } catch (error) {
-        console.error('Error fetching payment gateways:', error);
+    } catch {
         return [];
     }
 }
@@ -289,40 +221,42 @@ export async function getPaymentGateways() {
  * Fetch WooCommerce settings
  */
 export async function getWoocommerceSettings() {
-    try {
-        const response = await fetch(`${API_BASE_URL}/settings/general`, {
-            headers: getAuthHeaders(),
-        });
-
-        if (!response.ok) {
-            throw new Error(`Failed to fetch settings: ${response.statusText}`);
-        }
-
-        return await response.json();
-    } catch (error) {
-        console.error('Error fetching settings:', error);
-        return [];
-    }
+    return fetchWooCommerce(`/settings/general`, { revalidate: 3600 }).catch(() => []);
 }
 
 /**
  * Fetch shipping methods
  */
 export async function getShippingMethods() {
-    try {
-        const response = await fetch(`${API_BASE_URL}/shipping_methods`, {
-            headers: getAuthHeaders(),
-        });
+    return fetchWooCommerce(`/shipping_methods`, { revalidate: 3600 }).catch(() => []);
+}
 
-        if (!response.ok) {
-            throw new Error(`Failed to fetch shipping methods: ${response.statusText}`);
-        }
+/**
+ * Fetch shipping zones
+ */
+export async function getShippingZones() {
+    return fetchWooCommerce(`/shipping/zones`, { revalidate: 3600 }).catch(() => []);
+}
 
-        return await response.json();
-    } catch (error) {
-        console.error('Error fetching shipping methods:', error);
-        return [];
-    }
+/**
+ * Fetch shipping methods for a specific zone
+ */
+export async function getShippingZoneMethods(zoneId: number) {
+    return fetchWooCommerce(`/shipping/zones/${zoneId}/methods`, { revalidate: 3600 }).catch(() => []);
+}
+
+/**
+ * Fetch locations for a specific shipping zone
+ */
+export async function getShippingZoneLocations(zoneId: number) {
+    return fetchWooCommerce(`/shipping/zones/${zoneId}/locations`, { revalidate: 3600 }).catch(() => []);
+}
+
+/**
+ * Fetch all countries and their states
+ */
+export async function getCountries() {
+    return fetchWooCommerce(`/data/countries`, { revalidate: 86400 }).catch(() => []); // Cache countries for a day
 }
 
 export async function getCurrencySettings() {
@@ -332,11 +266,7 @@ export async function getCurrencySettings() {
         const currencyPos = settings.find((s: any) => s.id === 'woocommerce_currency_pos')?.value || 'left';
 
         const symbols: Record<string, string> = {
-            'USD': '$',
-            'EUR': '€',
-            'GBP': '£',
-            'BDT': '৳',
-            'INR': '₹'
+            'USD': '$', 'EUR': '€', 'GBP': '£', 'BDT': '৳', 'INR': '₹'
         };
 
         return {
@@ -344,7 +274,7 @@ export async function getCurrencySettings() {
             symbol: symbols[currencyCode] || currencyCode,
             position: currencyPos
         };
-    } catch (error) {
+    } catch {
         return { code: 'USD', symbol: '$', position: 'left' };
     }
 }
@@ -353,21 +283,7 @@ export async function getCurrencySettings() {
  * Fetch product tags
  */
 export async function getTags() {
-    try {
-        const response = await fetch(`${API_BASE_URL}/products/tags`, {
-            headers: getAuthHeaders(),
-            next: { revalidate: 3600 },
-        });
-
-        if (!response.ok) {
-            throw new Error(`Failed to fetch tags: ${response.statusText}`);
-        }
-
-        return await response.json();
-    } catch (error) {
-        console.error('Error fetching tags:', error);
-        return [];
-    }
+    return fetchWooCommerce(`/products/tags`, { revalidate: 3600 }).catch(() => []);
 }
 
 /**
@@ -407,18 +323,9 @@ export function mapWooCommerceProduct(p: WooCommerceProduct) {
  */
 export async function validateCoupon(code: string) {
     try {
-        const response = await fetch(`${API_BASE_URL}/coupons?code=${encodeURIComponent(code)}`, {
-            headers: getAuthHeaders(),
-        });
-
-        if (!response.ok) {
-            throw new Error(`Failed to validate coupon: ${response.statusText}`);
-        }
-
-        const coupons = await response.json();
+        const coupons = await fetchWooCommerce(`/coupons?code=${encodeURIComponent(code)}`, { revalidate: 0 });
         return coupons.length > 0 ? coupons[0] : null;
-    } catch (error) {
-        console.error('Error validating coupon:', error);
+    } catch {
         return null;
     }
 }
@@ -442,22 +349,9 @@ export interface WooCommerceProduct {
     grouped_products?: number[];
     date_created: string;
     on_sale: boolean;
-    images: Array<{
-        id: number;
-        src: string;
-        name: string;
-        alt: string;
-    }>;
-    categories: Array<{
-        id: number;
-        name: string;
-        slug: string;
-    }>;
-    tags: Array<{
-        id: number;
-        name: string;
-        slug: string;
-    }>;
+    images: Array<{ id: number; src: string; name: string; alt: string; }>;
+    categories: Array<{ id: number; name: string; slug: string; }>;
+    tags: Array<{ id: number; name: string; slug: string; }>;
     attributes: Array<{
         id: number;
         name: string;
@@ -477,11 +371,6 @@ export interface WooCommerceCategory {
     name: string;
     slug: string;
     description: string;
-    image: {
-        id: number;
-        src: string;
-        name: string;
-        alt: string;
-    } | null;
+    image: { id: number; src: string; name: string; alt: string; } | null;
     count: number;
 }

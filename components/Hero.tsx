@@ -3,6 +3,7 @@
 import { useEffect, useRef } from 'react';
 import { gsap } from 'gsap';
 import Link from 'next/link';
+import NextImage from 'next/image';
 
 export default function Hero() {
     const heroRef = useRef<HTMLDivElement>(null);
@@ -132,10 +133,13 @@ export default function Hero() {
 
                             {/* Main Image Container */}
                             <div className="relative aspect-square rounded-full overflow-hidden border-8 border-white shadow-2xl">
-                                <img
+                                <NextImage
                                     src="https://images.unsplash.com/photo-1596462502278-27bfdc403348?w=800&h=800&fit=crop"
                                     alt="Beauty Products"
-                                    className="w-full h-full object-cover"
+                                    fill
+                                    className="object-cover"
+                                    sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 40vw"
+                                    priority
                                 />
                             </div>
 

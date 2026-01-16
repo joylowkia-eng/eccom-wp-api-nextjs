@@ -2,25 +2,22 @@
 
 import { useParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { getOrder, getCurrencySettings } from '@/lib/woocommerce';
+import { useCurrency } from '@/app/context/CurrencyContext';
+import { getOrder } from '@/lib/woocommerce';
 
 export default function InvoicePage() {
     const params = useParams();
     const orderId = params.id as string;
+    const { formatPrice } = useCurrency();
     const [order, setOrder] = useState<any>(null);
     const [isLoading, setIsLoading] = useState(true);
-    const [currency, setCurrency] = useState({ symbol: '$', position: 'left' });
     const [isPrinting, setIsPrinting] = useState(false);
 
     useEffect(() => {
         async function loadOrder() {
             try {
-                const [orderData, currencyData] = await Promise.all([
-                    getOrder(orderId),
-                    getCurrencySettings()
-                ]);
+                const orderData = await getOrder(orderId);
                 setOrder(orderData);
-                setCurrency(currencyData);
             } catch (error) {
                 console.error('Error loading invoice:', error);
             } finally {
@@ -29,12 +26,6 @@ export default function InvoicePage() {
         }
         if (orderId) loadOrder();
     }, [orderId]);
-
-    const formatPrice = (price: number | string) => {
-        const val = typeof price === 'string' ? parseFloat(price) : price;
-        const formatted = val.toFixed(2);
-        return currency.position === 'left' ? `${currency.symbol}${formatted}` : `${formatted}${currency.symbol}`;
-    };
 
     const handlePrint = () => {
         setIsPrinting(true);

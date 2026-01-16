@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import NextImage from 'next/image';
 
 interface FeatureCardProps {
     image: string;
@@ -16,10 +17,12 @@ export default function FeatureCard({ image, title, description, href, linkText 
             <div className="bg-white rounded-3xl overflow-hidden shadow-sm hover:shadow-xl transition-all duration-500 transform hover:-translate-y-2 h-full flex flex-col">
                 <div className="aspect-[4/3] overflow-hidden relative">
                     <div className="absolute inset-0 bg-black/10 group-hover:bg-black/0 transition-colors z-10"></div>
-                    <img
+                    <NextImage
                         src={image}
                         alt={title}
-                        className="w-full h-full object-cover transform group-hover:scale-110 transition-transform duration-700"
+                        fill
+                        className="object-cover transform group-hover:scale-110 transition-transform duration-700"
+                        sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
                     />
                 </div>
                 <div className="p-[var(--spacing-lg)] flex-1 flex flex-col justify-between">

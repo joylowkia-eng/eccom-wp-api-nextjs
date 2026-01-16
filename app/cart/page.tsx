@@ -1,13 +1,35 @@
 'use client';
-
+import { useState } from 'react';
 import Link from 'next/link';
+import NextImage from 'next/image';
 import { useCart } from '@/app/context/CartContext';
+import { useCurrency } from '@/app/context/CurrencyContext';
+import { validateCoupon } from '@/lib/woocommerce';
 
 export default function CartPage() {
-    const { cartItems, updateQuantity, removeFromCart, cartTotal, getItemKey } = useCart();
+    const { cartItems, updateQuantity, removeFromCart, cartTotal, getItemKey, appliedCoupon, applyCoupon, removeCoupon } = useCart();
+    const { formatPrice } = useCurrency();
+    const [couponCode, setCouponCode] = useState('');
+    const [couponError, setCouponError] = useState('');
+    const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+    const discountAmount = appliedCoupon ? (appliedCoupon.discount_type === 'percent' ? (cartTotal * parseFloat(appliedCoupon.amount) / 100) : parseFloat(appliedCoupon.amount)) : 0;
+    const total = cartTotal - discountAmount;
 
-    const shipping = cartTotal > 100 ? 0 : 15;
-    const total = cartTotal + shipping;
+    const handleApplyCoupon = async () => {
+        if (!couponCode) return;
+        setCouponError('');
+        try {
+            const coupon = await validateCoupon(couponCode);
+            if (coupon) {
+                applyCoupon(coupon);
+                setCouponCode('');
+            } else {
+                setCouponError('Invalid coupon code');
+            }
+        } catch (error) {
+            setCouponError('Error validating coupon');
+        }
+    };
 
     const handleQuantityChange = (item: any, change: number) => {
         const key = getItemKey(item);
@@ -36,11 +58,13 @@ export default function CartPage() {
                                     className="bg-white rounded-2xl p-[var(--spacing-md)] shadow-sm flex flex-col sm:flex-row gap-[var(--spacing-md)] items-center"
                                 >
                                     {/* Image */}
-                                    <div className="w-24 h-24 sm:w-32 sm:h-32 flex-shrink-0 bg-[#F5F5F5] rounded-xl overflow-hidden aspect-square">
-                                        <img
+                                    <div className="w-24 h-24 sm:w-32 sm:h-32 flex-shrink-0 bg-[#F5F5F5] rounded-xl overflow-hidden aspect-square relative">
+                                        <NextImage
                                             src={item.image}
                                             alt={item.name}
-                                            className="w-full h-full object-cover"
+                                            fill
+                                            className="object-cover"
+                                            sizes="(max-width: 640px) 100px, 150px"
                                         />
                                     </div>
 
@@ -62,7 +86,7 @@ export default function CartPage() {
                                             </div>
                                         )}
                                         <div className="mt-2 font-bold text-[#B76E79]">
-                                            ${item.price.toFixed(2)}
+                                            {formatPrice(item.price)}
                                         </div>
                                     </div>
 
@@ -101,17 +125,45 @@ export default function CartPage() {
                                 <h3 className="font-display text-2xl font-bold mb-[var(--spacing-md)]">Order Summary</h3>
 
                                 <div className="space-y-[var(--spacing-sm)] mb-[var(--spacing-md)]">
-                                    <div className="flex justify-between text-[#2C2C2C]">
+                                    {/* Coupon Section */}
+                                    <div className="space-y-2 mb-4">
+                                        <div className="flex gap-2">
+                                            <input
+                                                type="text"
+                                                placeholder="Coupon code"
+                                                value={couponCode}
+                                                onChange={(e) => setCouponCode(e.target.value)}
+                                                className="flex-1 px-3 py-2 bg-[#F9F9F9] border border-transparent rounded-lg focus:bg-white focus:border-[#B76E79] outline-none text-sm transition-all"
+                                            />
+                                            <button
+                                                onClick={handleApplyCoupon}
+                                                className="px-4 py-2 bg-[#2C2C2C] text-white text-xs font-bold rounded-lg hover:bg-black transition-all"
+                                            >
+                                                Apply
+                                            </button>
+                                        </div>
+                                        {couponError && <p className="text-[10px] text-red-500">{couponError}</p>}
+                                        {appliedCoupon && (
+                                            <div className="flex items-center justify-between bg-green-50 p-2 rounded-lg border border-green-200">
+                                                <span className="text-[10px] text-green-700 font-bold">Applied: {appliedCoupon.code}</span>
+                                                <button onClick={removeCoupon} className="text-[10px] text-red-500 hover:underline">Remove</button>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    <div className="flex justify-between text-[#2C2C2C] text-sm">
                                         <span>Subtotal</span>
-                                        <span className="font-semibold">${cartTotal.toFixed(2)}</span>
+                                        <span className="font-semibold">{formatPrice(cartTotal)}</span>
                                     </div>
-                                    <div className="flex justify-between text-[#2C2C2C]">
-                                        <span>Shipping</span>
-                                        <span className="font-semibold">{shipping === 0 ? 'Free' : `$${shipping.toFixed(2)}`}</span>
-                                    </div>
+                                    {appliedCoupon && (
+                                        <div className="flex justify-between text-green-600 text-sm">
+                                            <span>Discount</span>
+                                            <span className="font-semibold">-{formatPrice(discountAmount)}</span>
+                                        </div>
+                                    )}
                                     <div className="border-t border-[#FFE5E5] pt-[var(--spacing-sm)] flex justify-between text-lg font-bold">
                                         <span>Total</span>
-                                        <span className="text-[#B76E79]">${total.toFixed(2)}</span>
+                                        <span className="text-[#B76E79]">{formatPrice(total)}</span>
                                     </div>
                                 </div>
 

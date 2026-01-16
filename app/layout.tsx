@@ -12,6 +12,7 @@ export const metadata: Metadata = {
 import { CartProvider } from "./context/CartContext";
 import { WishlistProvider } from "./context/WishlistContext";
 import { AuthProvider } from "./context/AuthContext";
+import { CurrencyProvider } from "./context/CurrencyContext";
 
 export default function RootLayout({
   children,
@@ -21,15 +22,17 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className="antialiased">
-        <CartProvider>
-          <WishlistProvider>
-            <AuthProvider>
-              <Header />
-              {children}
-              <Footer />
-            </AuthProvider>
-          </WishlistProvider>
-        </CartProvider>
+        <CurrencyProvider>
+          <CartProvider>
+            <WishlistProvider>
+              <AuthProvider>
+                <Header />
+                {children}
+                <Footer />
+              </AuthProvider>
+            </WishlistProvider>
+          </CartProvider>
+        </CurrencyProvider>
       </body>
     </html>
   );

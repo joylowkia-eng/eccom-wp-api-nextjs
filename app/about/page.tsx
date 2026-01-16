@@ -1,6 +1,7 @@
 'use client';
 
 import PageHeader from '@/components/PageHeader';
+import NextImage from 'next/image';
 
 export default function AboutPage() {
     return (
@@ -40,10 +41,12 @@ export default function AboutPage() {
 
                     <div className="order-1 lg:order-2">
                         <div className="relative rounded-3xl overflow-hidden shadow-xl aspect-standard">
-                            <img
+                            <NextImage
                                 src="https://images.unsplash.com/photo-1556228720-195a672e8a03?w=800&h=1000&fit=crop"
                                 alt="Our ingredients"
-                                className="object-cover w-full h-full"
+                                fill
+                                className="object-cover"
+                                sizes="(max-width: 1024px) 100vw, 50vw"
                             />
                             <div className="absolute inset-0 bg-gradient-to-t from-black/30 to-transparent"></div>
                         </div>

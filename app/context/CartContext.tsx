@@ -26,12 +26,16 @@ interface CartContextType {
     isCartOpen: boolean;
     toggleCart: () => void;
     getItemKey: (item: any) => string;
+    appliedCoupon: any;
+    applyCoupon: (coupon: any) => void;
+    removeCoupon: () => void;
 }
 
 const CartContext = createContext<CartContextType | undefined>(undefined);
 
 export function CartProvider({ children }: { children: ReactNode }) {
     const [cartItems, setCartItems] = useState<CartItem[]>([]);
+    const [appliedCoupon, setAppliedCoupon] = useState<any>(null);
     const [isCartOpen, setIsCartOpen] = useState(false);
     const [isMounted, setIsMounted] = useState(false);
 
@@ -46,11 +50,19 @@ export function CartProvider({ children }: { children: ReactNode }) {
     useEffect(() => {
         setIsMounted(true);
         const savedCart = localStorage.getItem('cart');
+        const savedCoupon = localStorage.getItem('appliedCoupon');
         if (savedCart) {
             try {
                 setCartItems(JSON.parse(savedCart));
             } catch (e) {
                 console.error('Failed to parse cart', e);
+            }
+        }
+        if (savedCoupon) {
+            try {
+                setAppliedCoupon(JSON.parse(savedCoupon));
+            } catch (e) {
+                console.error('Failed to parse coupon', e);
             }
         }
     }, []);
@@ -59,8 +71,13 @@ export function CartProvider({ children }: { children: ReactNode }) {
     useEffect(() => {
         if (isMounted) {
             localStorage.setItem('cart', JSON.stringify(cartItems));
+            if (appliedCoupon) {
+                localStorage.setItem('appliedCoupon', JSON.stringify(appliedCoupon));
+            } else {
+                localStorage.removeItem('appliedCoupon');
+            }
         }
-    }, [cartItems, isMounted]);
+    }, [cartItems, appliedCoupon, isMounted]);
 
     const addToCart = (newItem: CartItem) => {
         setCartItems(prevItems => {
@@ -95,10 +112,15 @@ export function CartProvider({ children }: { children: ReactNode }) {
 
     const clearCart = () => {
         setCartItems([]);
+        setAppliedCoupon(null);
         localStorage.removeItem('cart');
+        localStorage.removeItem('appliedCoupon');
     };
 
     const toggleCart = () => setIsCartOpen(prev => !prev);
+
+    const applyCoupon = (coupon: any) => setAppliedCoupon(coupon);
+    const removeCoupon = () => setAppliedCoupon(null);
 
     const cartCount = cartItems.reduce((total, item) => total + item.quantity, 0);
     const cartTotal = cartItems.reduce((total, item) => total + (item.price * item.quantity), 0);
@@ -114,7 +136,10 @@ export function CartProvider({ children }: { children: ReactNode }) {
             cartTotal,
             isCartOpen,
             toggleCart,
-            getItemKey
+            getItemKey,
+            appliedCoupon,
+            applyCoupon,
+            removeCoupon
         }}>
             {children}
         </CartContext.Provider>

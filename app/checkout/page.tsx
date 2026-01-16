@@ -6,81 +6,226 @@ import { useRouter } from 'next/navigation';
 import PaymentIcons from '@/components/PaymentIcons';
 import { useCart } from '@/app/context/CartContext';
 import { useAuth } from '@/app/context/AuthContext';
-import { getPaymentGateways, createOrder, getCurrencySettings, getShippingMethods, validateCoupon } from '@/lib/woocommerce';
+import { useCurrency } from '@/app/context/CurrencyContext';
+import { getPaymentGateways, createOrder, getShippingMethods, validateCoupon, getShippingZones, getShippingZoneMethods, getShippingZoneLocations, getCountries, getWoocommerceSettings, getCustomer } from '@/lib/woocommerce';
+import Input from '@/components/ui/Input';
+import Select from '@/components/ui/Select';
+import Script from 'next/script';
+import NextImage from 'next/image';
 
 export default function CheckoutPage() {
-    const { cartItems, cartTotal, clearCart, getItemKey } = useCart();
+    const { cartItems, cartTotal, clearCart, getItemKey, appliedCoupon, applyCoupon, removeCoupon } = useCart();
     const { user } = useAuth();
+    const { formatPrice } = useCurrency();
     const router = useRouter();
 
     const [gateways, setGateways] = useState<any[]>([]);
     const [shippingMethods, setShippingMethods] = useState<any[]>([]);
+    const [zones, setZones] = useState<any[]>([]);
+    const [allCountries, setAllCountries] = useState<any[]>([]);
+    const [allowedCountries, setAllowedCountries] = useState<any[]>([]);
     const [selectedGateway, setSelectedGateway] = useState('');
     const [selectedShipping, setSelectedShipping] = useState('');
     const [shippingCost, setShippingCost] = useState(0);
-    const [currency, setCurrency] = useState({ symbol: '$', position: 'left' });
     const [isLoading, setIsLoading] = useState(false);
     const [isGatewaysLoading, setIsGatewaysLoading] = useState(true);
-    const [isShippingLoading, setIsShippingLoading] = useState(true);
+    const [isShippingLoading, setIsShippingLoading] = useState(false);
 
     const [couponCode, setCouponCode] = useState('');
-    const [appliedCoupon, setAppliedCoupon] = useState<any>(null);
     const [couponError, setCouponError] = useState('');
+    const [formErrors, setFormErrors] = useState<Record<string, string>>({});
 
-    const [showShippingAddress, setShowShippingAddress] = useState(false);
+    const [showBillingAddress, setShowBillingAddress] = useState(false);
 
     const [formData, setFormData] = useState({
         email: user?.email || '',
         phone: '',
-        firstName: user?.name.split(' ')[0] || '',
-        lastName: user?.name.split(' ')[1] || '',
+        firstName: user?.name?.split(' ')[0] || '',
+        lastName: user?.name?.split(' ')[1] || '',
         address: '',
         city: '',
+        state: '13',
         postcode: '',
-        country: 'US',
-        shippingFirstName: '',
-        shippingLastName: '',
+        country: 'BD',
+        shippingFirstName: user?.name?.split(' ')[0] || '',
+        shippingLastName: user?.name?.split(' ')[1] || '',
         shippingAddress: '',
         shippingCity: '',
+        shippingState: '13',
         shippingPostcode: '',
-        shippingCountry: 'US'
+        shippingCountry: 'BD'
     });
+    // Sync user data to form when user is available
+    useEffect(() => {
+        async function syncCustomerData() {
+            if (!user) return;
+
+            // First sync basic name/email from context
+            setFormData(prev => ({
+                ...prev,
+                email: user.email || prev.email,
+                firstName: user.name?.split(' ')[0] || prev.firstName,
+                lastName: user.name?.split(' ')[1] || prev.lastName,
+                shippingFirstName: user.name?.split(' ')[0] || prev.shippingFirstName,
+                shippingLastName: user.name?.split(' ')[1] || prev.shippingLastName,
+            }));
+
+            // Then try to fetch full customer data for addresses
+            try {
+                const customer = await getCustomer(parseInt(user.id));
+                if (customer) {
+                    setFormData(prev => ({
+                        ...prev,
+                        phone: customer.billing?.phone || prev.phone,
+                        firstName: customer.billing?.first_name || prev.firstName,
+                        lastName: customer.billing?.last_name || prev.lastName,
+                        address: customer.billing?.address_1 || prev.address,
+                        city: customer.billing?.city || prev.city,
+                        state: customer.billing?.state || prev.state,
+                        postcode: customer.billing?.postcode || prev.postcode,
+                        country: customer.billing?.country || prev.country,
+                        shippingFirstName: customer.shipping?.first_name || prev.shippingFirstName,
+                        shippingLastName: customer.shipping?.last_name || prev.shippingLastName,
+                        shippingAddress: customer.shipping?.address_1 || prev.shippingAddress,
+                        shippingCity: customer.shipping?.city || prev.shippingCity,
+                        shippingState: customer.shipping?.state || prev.shippingState,
+                        shippingPostcode: customer.shipping?.postcode || prev.shippingPostcode,
+                        shippingCountry: customer.shipping?.country || prev.shippingCountry,
+                    }));
+
+                    // If shipping info is different, we might want to show billing address too
+                    if (customer.billing?.address_1 !== customer.shipping?.address_1) {
+                        setShowBillingAddress(true);
+                    }
+                }
+            } catch (e) {
+                console.error("Failed to fetch full customer details for checkout", e);
+            }
+        }
+
+        syncCustomerData();
+    }, [user, allCountries.length]); // Re-sync when user or country data is ready
 
     useEffect(() => {
-        async function loadCheckoutData() {
+        async function loadInitialData() {
             try {
-                const [paymentGateways, methods, currencyData] = await Promise.all([
+                const [paymentGateways, allZones, countriesData, settings] = await Promise.all([
                     getPaymentGateways(),
-                    getShippingMethods(),
-                    getCurrencySettings()
+                    getShippingZones(),
+                    getCountries(),
+                    getWoocommerceSettings()
                 ]);
+
                 setGateways(paymentGateways);
                 if (paymentGateways.length > 0) {
                     setSelectedGateway(paymentGateways[0].id);
                 }
-                setShippingMethods(methods);
-                if (methods.length > 0) {
-                    setSelectedShipping(methods[0].id);
-                    setShippingCost(parseFloat(methods[0].settings?.cost?.value || '0'));
+
+                setZones(allZones);
+                setAllCountries(countriesData);
+
+                // Handle Allowed Countries based on WooCommerce Settings
+                const sellToSpecific = settings.find((s: any) => s.id === 'woocommerce_allowed_countries')?.value;
+                const specificCountries = settings.find((s: any) => s.id === 'woocommerce_specific_allowed_countries')?.value || [];
+
+                if (sellToSpecific === 'specific' && Array.isArray(specificCountries)) {
+                    setAllowedCountries(countriesData.filter((c: any) => specificCountries.includes(c.code)));
+                } else if (sellToSpecific === 'all_except') {
+                    const exceptCountries = settings.find((s: any) => s.id === 'woocommerce_all_except_countries')?.value || [];
+                    setAllowedCountries(countriesData.filter((c: any) => !exceptCountries.includes(c.code)));
+                } else {
+                    setAllowedCountries(countriesData);
                 }
-                setCurrency(currencyData);
             } catch (error) {
-                console.error("Failed to load checkout data", error);
+                console.error("Failed to load initial checkout data", error);
             } finally {
                 setIsGatewaysLoading(false);
+            }
+        }
+        loadInitialData();
+    }, []);
+
+    // Dynamic Shipping Calculation based on location
+    useEffect(() => {
+        const activeCountry = formData.shippingCountry;
+        const activeState = formData.shippingState;
+
+        async function updateShippingMethods() {
+            if (!activeCountry) {
+                setShippingMethods([]);
+                setShippingCost(0);
+                return;
+            }
+
+            setIsShippingLoading(true);
+            try {
+                // 1. Find the matching zone
+                // We'll iterate through zones and fetch their locations to find a match
+                let matchedZoneId = 0; // Default to 'Everywhere' (Zone 0)
+
+                for (const zone of zones) {
+                    if (zone.id === 0) continue;
+                    const locations = await getShippingZoneLocations(zone.id);
+
+                    const isMatch = locations.some((loc: any) => {
+                        const normalizedActiveState = activeState.includes(':') ? activeState : `${activeCountry}:${activeState}`;
+                        const normalizedLocCode = loc.code.includes(':') ? loc.code : `${activeCountry}:${loc.code}`;
+
+                        // Exact State Match
+                        if (loc.type === 'state') {
+                            return loc.code === activeState || loc.code === normalizedActiveState;
+                        }
+
+                        // Country Match (only if no specific state in this country is defined in the same zone)
+                        if (loc.type === 'country' && loc.code === activeCountry) {
+                            // Check if this specific zone has ANY states defined for THIS country
+                            const hasStateRestraintsForCountry = locations.some((l: any) =>
+                                l.type === 'state' && l.code.startsWith(`${activeCountry}:`)
+                            );
+
+                            if (!hasStateRestraintsForCountry) return true;
+
+                            // If there are states defined for this country in this zone, we MUST match one of them
+                            return locations.some((l: any) =>
+                                l.type === 'state' && (l.code === activeState || l.code === normalizedActiveState)
+                            );
+                        }
+                        return false;
+                    });
+
+                    if (isMatch) {
+                        matchedZoneId = zone.id;
+                        break;
+                    }
+                }
+
+                // 2. Fetch methods for the matched zone
+                const methods = await getShippingZoneMethods(matchedZoneId);
+                const enabledMethods = methods.filter((m: any) => m.enabled);
+
+                setShippingMethods(enabledMethods);
+                if (enabledMethods.length > 0) {
+                    setSelectedShipping(enabledMethods[0].id);
+                    setShippingCost(parseFloat(enabledMethods[0].settings?.cost?.value || '0'));
+                } else {
+                    setSelectedShipping('');
+                    setShippingCost(0);
+                }
+            } catch (error) {
+                console.error("Error updating shipping methods", error);
+            } finally {
                 setIsShippingLoading(false);
             }
         }
-        loadCheckoutData();
-    }, []);
+
+        if (zones.length > 0) {
+            updateShippingMethods();
+        }
+    }, [formData.shippingState, formData.shippingCountry, zones]);
 
     const discountAmount = appliedCoupon ? (appliedCoupon.discount_type === 'percent' ? (cartTotal * parseFloat(appliedCoupon.amount) / 100) : parseFloat(appliedCoupon.amount)) : 0;
     const total = cartTotal - discountAmount + shippingCost;
 
-    const formatPrice = (price: number) => {
-        const val = price.toFixed(2);
-        return currency.position === 'left' ? `${currency.symbol}${val}` : `${val}${currency.symbol}`;
-    };
 
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const { name, value } = e.target;
@@ -93,7 +238,8 @@ export default function CheckoutPage() {
         try {
             const coupon = await validateCoupon(couponCode);
             if (coupon) {
-                setAppliedCoupon(coupon);
+                applyCoupon(coupon);
+                setCouponCode('');
             } else {
                 setCouponError('Invalid coupon code');
             }
@@ -102,7 +248,38 @@ export default function CheckoutPage() {
         }
     };
 
+    const validateForm = () => {
+        const errors: Record<string, string> = {};
+        if (!formData.email) errors.email = 'Email is required';
+        else if (!/\S+@\S+\.\S+/.test(formData.email)) errors.email = 'Invalid email format';
+
+        if (showBillingAddress) {
+            if (!formData.firstName) errors.firstName = 'First name is required';
+            if (!formData.lastName) errors.lastName = 'Last name is required';
+            if (!formData.address) errors.address = 'Address is required';
+            if (!formData.city) errors.city = 'City is required';
+            if (!formData.state) errors.state = 'State is required';
+            if (!formData.postcode) errors.postcode = 'Postal code is required';
+        }
+
+        if (!formData.shippingFirstName) errors.shippingFirstName = 'First name is required';
+        if (!formData.shippingLastName) errors.shippingLastName = 'Last name is required';
+        if (!formData.shippingAddress) errors.shippingAddress = 'Address is required';
+        if (!formData.shippingCity) errors.shippingCity = 'City is required';
+        if (!formData.shippingState) errors.shippingState = 'District is required';
+        if (!formData.shippingPostcode) errors.shippingPostcode = 'Postal code is required';
+
+        setFormErrors(errors);
+        return Object.keys(errors).length === 0;
+    };
+
     const handlePlaceOrder = async () => {
+        if (!validateForm()) {
+            const firstError = document.querySelector('.text-red-500');
+            firstError?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            return;
+        }
+
         if (!selectedGateway) {
             alert('Please select a payment method');
             return;
@@ -118,35 +295,42 @@ export default function CheckoutPage() {
 
             const gatewayTitle = gateways.find(g => g.id === selectedGateway)?.title || selectedGateway;
             const shippingTitle = shippingMethods.find(s => s.id === selectedShipping)?.title || selectedShipping;
+            const successUrl = `${window.location.origin}/invoice/{order_id}`;
+            const cancelUrl = window.location.href;
 
             const orderData = {
                 payment_method: selectedGateway,
                 payment_method_title: gatewayTitle,
                 set_paid: false,
-                billing: {
+                billing: showBillingAddress ? {
                     first_name: formData.firstName,
                     last_name: formData.lastName,
                     address_1: formData.address,
                     city: formData.city,
+                    state: formData.state,
                     postcode: formData.postcode,
                     country: formData.country,
                     email: formData.email,
                     phone: formData.phone
-                },
-                shipping: showShippingAddress ? {
+                } : {
                     first_name: formData.shippingFirstName,
                     last_name: formData.shippingLastName,
                     address_1: formData.shippingAddress,
                     city: formData.shippingCity,
+                    state: formData.shippingState,
+                    postcode: formData.shippingPostcode,
+                    country: formData.shippingCountry,
+                    email: formData.email,
+                    phone: formData.phone
+                },
+                shipping: {
+                    first_name: formData.shippingFirstName,
+                    last_name: formData.shippingLastName,
+                    address_1: formData.shippingAddress,
+                    city: formData.shippingCity,
+                    state: formData.shippingState,
                     postcode: formData.shippingPostcode,
                     country: formData.shippingCountry
-                } : {
-                    first_name: formData.firstName,
-                    last_name: formData.lastName,
-                    address_1: formData.address,
-                    city: formData.city,
-                    postcode: formData.postcode,
-                    country: formData.country
                 },
                 line_items: lineItems,
                 customer_id: user?.id ? parseInt(user.id) : 0,
@@ -157,35 +341,66 @@ export default function CheckoutPage() {
                         total: shippingCost.toString()
                     }
                 ],
-                coupon_lines: appliedCoupon ? [{ code: appliedCoupon.code }] : []
+                coupon_lines: appliedCoupon ? [{ code: appliedCoupon.code }] : [],
+                // Multiple keys for compatibility with different gateway plugins
+                meta_data: [
+                    { key: '_success_url', value: successUrl },
+                    { key: '_cancel_url', value: cancelUrl },
+                    { key: 'return_url', value: successUrl },
+                    { key: 'cancel_url', value: cancelUrl }
+                ]
             };
 
             const response = await createOrder(orderData);
 
             if (response && response.id) {
-                clearCart();
+                // 1. Check for immediate success methods (Cash on Delivery etc) or status
+                const isCOD = selectedGateway === 'cod';
+                if (isCOD || response.status === 'processing' || response.status === 'completed') {
+                    clearCart();
+                    router.push(`/invoice/${response.id}`);
+                    return;
+                }
 
-                // Check if the payment method requires a redirect (like SSLCommerz)
-                // Some WC plugins return 'payment_url' or 'checkout_url' in the REST response
-                const paymentUrl = response.payment_url || response.checkout_url || (response.meta_data?.find((m: any) => m.key === '_payment_url')?.value);
+                // 2. Identify the payment URL
+                let paymentUrl = response.payment_url || response.checkout_url || (response.meta_data?.find((m: any) => m.key === '_payment_url')?.value);
+
+                // Ensure the payment URL points to our local app for the order-pay interception
+                if (paymentUrl && paymentUrl.includes('/checkout/order-pay/')) {
+                    const urlObj = new URL(paymentUrl);
+                    paymentUrl = `${window.location.origin}${urlObj.pathname}${urlObj.search}`;
+                }
 
                 if (paymentUrl) {
+                    // Try to use the SSLCommerz popup if it's that gateway
+                    if (selectedGateway.toLowerCase().includes('sslcommerz')) {
+                        try {
+                            const btn = document.getElementById('sslczPayBtn');
+                            if (btn) {
+                                btn.setAttribute('endpoint', paymentUrl);
+                                (btn as any).endpoint = paymentUrl; // Set as property too for some versions of the SDK
+                            }
+
+                            if ((window as any).OSL_Handler) {
+                                (window as any).OSL_Handler(paymentUrl);
+                                setIsLoading(false);
+                                return;
+                            }
+                        } catch (e) {
+                            console.error("Popup handler failed", e);
+                        }
+                    }
+
+                    // Fallback to direct redirect
                     window.location.href = paymentUrl;
-                } else if (selectedGateway === 'sslcommerz_payment' || selectedGateway === 'sslcommerz') {
-                    // Fallback to standard WC Pay for Order page if no direct payment URL is provided
-                    const siteUrl = process.env.NEXT_PUBLIC_WOOCOMMERCE_URL;
-                    const payUrl = `${siteUrl}/checkout/order-pay/${response.id}/?key=${response.order_key}&pay_for_order=true`;
-                    window.location.href = payUrl;
                 } else {
+                    clearCart();
                     router.push(`/invoice/${response.id}`);
                 }
-            } else {
-                throw new Error("Order creation failed");
             }
         } catch (error: any) {
             console.error("Error placing order:", error);
             alert(`Failed to place order: ${error.message}`);
-        } finally {
             setIsLoading(false);
         }
     };
@@ -201,6 +416,12 @@ export default function CheckoutPage() {
 
     return (
         <main className="min-h-screen pt-32 pb-[var(--spacing-2xl)] bg-[#FFF8F0]">
+            {/* 3. Load the SSLCommerz SDK */}
+            {/* Use 'sandbox' for testing, 'seamless-epay' for live */}
+            <Script
+                src="https://sandbox.sslcommerz.com/embed.min.js"
+                strategy="afterInteractive"
+            />
             <div className="container">
                 <div className="text-center mb-[var(--spacing-xl)]">
                     <h1 className="font-display text-4xl md:text-5xl font-bold mb-4 gradient-text">
@@ -218,163 +439,221 @@ export default function CheckoutPage() {
                                 Contact Information
                             </h3>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                <div className="space-y-2">
-                                    <label className="text-sm font-semibold text-[#2C2C2C]">Email Address</label>
-                                    <input
-                                        type="email"
-                                        name="email"
-                                        value={formData.email}
-                                        onChange={handleInputChange}
-                                        className="w-full px-4 py-3 bg-[#F9F9F9] border border-transparent rounded-lg focus:bg-white focus:border-[#B76E79] focus:ring-4 focus:ring-[#FFE5E5] transition-all outline-none"
-                                        placeholder="you@example.com"
-                                    />
-                                </div>
-                                <div className="space-y-2">
-                                    <label className="text-sm font-semibold text-[#2C2C2C]">Phone Number</label>
-                                    <input
-                                        type="tel"
-                                        name="phone"
-                                        value={formData.phone}
-                                        onChange={handleInputChange}
-                                        className="w-full px-4 py-3 bg-[#F9F9F9] border border-transparent rounded-lg focus:bg-white focus:border-[#B76E79] focus:ring-4 focus:ring-[#FFE5E5] transition-all outline-none"
-                                        placeholder="+1 (555) 000-0000"
-                                    />
-                                </div>
+                                <Input
+                                    label="Email Address"
+                                    type="email"
+                                    name="email"
+                                    value={formData.email}
+                                    onChange={handleInputChange}
+                                    error={formErrors.email}
+                                    placeholder="you@example.com"
+                                    required
+                                />
+                                <Input
+                                    label="Phone Number"
+                                    type="tel"
+                                    name="phone"
+                                    value={formData.phone}
+                                    onChange={handleInputChange}
+                                    error={formErrors.phone}
+                                    placeholder="+1 (555) 000-0000"
+                                    required
+                                />
                             </div>
                         </div>
 
-                        {/* Billing Address */}
+                        {/* 2. Shipping Address */}
                         <div className="bg-white rounded-2xl p-[var(--spacing-lg)] shadow-sm">
                             <h3 className="font-display text-xl font-bold mb-[var(--spacing-md)] flex items-center gap-3">
                                 <span className="w-8 h-8 bg-[#FFE5E5] text-[#B76E79] rounded-full flex items-center justify-center text-sm font-bold">2</span>
-                                Billing Address
+                                Shipping Address
                             </h3>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-[var(--spacing-md)]">
-                                <div className="space-y-2">
-                                    <label className="text-sm font-semibold text-[#2C2C2C]">First Name</label>
-                                    <input
-                                        type="text"
-                                        name="firstName"
-                                        value={formData.firstName}
+                                <Input
+                                    label="First Name"
+                                    name="shippingFirstName"
+                                    value={formData.shippingFirstName}
+                                    onChange={handleInputChange}
+                                    error={formErrors.shippingFirstName}
+                                    required
+                                />
+                                <Input
+                                    label="Last Name"
+                                    name="shippingLastName"
+                                    value={formData.shippingLastName}
+                                    onChange={handleInputChange}
+                                    error={formErrors.shippingLastName}
+                                    required
+                                />
+                                <Select
+                                    label="Country/Region"
+                                    name="shippingCountry"
+                                    value={formData.shippingCountry}
+                                    onChange={(e) => setFormData(prev => ({ ...prev, shippingCountry: e.target.value, shippingState: '' }))}
+                                    options={allowedCountries.length > 0 ? allowedCountries.map(c => ({ value: c.code, label: c.name })) : [{ value: 'BD', label: 'Bangladesh' }]}
+                                    placeholder="Select Country"
+                                    required
+                                />
+                                {(() => {
+                                    const currentCode = formData.shippingCountry?.toUpperCase();
+                                    const selectedCountryData = allCountries.find(c => c.code?.toUpperCase() === currentCode);
+                                    if (selectedCountryData?.states?.length > 0) {
+                                        return (
+                                            <Select
+                                                label="State / District"
+                                                name="shippingState"
+                                                value={formData.shippingState}
+                                                onChange={(e) => setFormData(prev => ({ ...prev, shippingState: e.target.value }))}
+                                                options={selectedCountryData.states.map((s: any) => ({ value: s.code, label: s.name }))}
+                                                error={formErrors.shippingState}
+                                                placeholder="Select State"
+                                                required
+                                            />
+                                        );
+                                    }
+                                    return (
+                                        <Input
+                                            label="State / District"
+                                            name="shippingState"
+                                            value={formData.shippingState}
+                                            onChange={handleInputChange}
+                                            error={formErrors.shippingState}
+                                            placeholder="Enter State/Province"
+                                            required
+                                        />
+                                    );
+                                })()}
+                                <div className="md:col-span-2">
+                                    <Input
+                                        label="Address"
+                                        name="shippingAddress"
+                                        value={formData.shippingAddress}
                                         onChange={handleInputChange}
-                                        className="w-full px-4 py-3 bg-[#F9F9F9] border border-transparent rounded-lg focus:bg-white focus:border-[#B76E79] focus:ring-4 focus:ring-[#FFE5E5] transition-all outline-none"
+                                        error={formErrors.shippingAddress}
+                                        required
                                     />
                                 </div>
-                                <div className="space-y-2">
-                                    <label className="text-sm font-semibold text-[#2C2C2C]">Last Name</label>
-                                    <input
-                                        type="text"
-                                        name="lastName"
-                                        value={formData.lastName}
-                                        onChange={handleInputChange}
-                                        className="w-full px-4 py-3 bg-[#F9F9F9] border border-transparent rounded-lg focus:bg-white focus:border-[#B76E79] focus:ring-4 focus:ring-[#FFE5E5] transition-all outline-none"
-                                    />
-                                </div>
-                                <div className="md:col-span-2 space-y-2">
-                                    <label className="text-sm font-semibold text-[#2C2C2C]">Address</label>
-                                    <input
-                                        type="text"
-                                        name="address"
-                                        value={formData.address}
-                                        onChange={handleInputChange}
-                                        className="w-full px-4 py-3 bg-[#F9F9F9] border border-transparent rounded-lg focus:bg-white focus:border-[#B76E79] focus:ring-4 focus:ring-[#FFE5E5] transition-all outline-none"
-                                    />
-                                </div>
-                                <div className="space-y-2">
-                                    <label className="text-sm font-semibold text-[#2C2C2C]">City</label>
-                                    <input
-                                        type="text"
-                                        name="city"
-                                        value={formData.city}
-                                        onChange={handleInputChange}
-                                        className="w-full px-4 py-3 bg-[#F9F9F9] border border-transparent rounded-lg focus:bg-white focus:border-[#B76E79] focus:ring-4 focus:ring-[#FFE5E5] transition-all outline-none"
-                                    />
-                                </div>
-                                <div className="space-y-2">
-                                    <label className="text-sm font-semibold text-[#2C2C2C]">Postal Code</label>
-                                    <input
-                                        type="text"
-                                        name="postcode"
-                                        value={formData.postcode}
-                                        onChange={handleInputChange}
-                                        className="w-full px-4 py-3 bg-[#F9F9F9] border border-transparent rounded-lg focus:bg-white focus:border-[#B76E79] focus:ring-4 focus:ring-[#FFE5E5] transition-all outline-none"
-                                    />
-                                </div>
+                                <Input
+                                    label="City"
+                                    name="shippingCity"
+                                    value={formData.shippingCity}
+                                    onChange={handleInputChange}
+                                    error={formErrors.shippingCity}
+                                    required
+                                />
+                                <Input
+                                    label="Postal Code"
+                                    name="shippingPostcode"
+                                    value={formData.shippingPostcode}
+                                    onChange={handleInputChange}
+                                    error={formErrors.shippingPostcode}
+                                    required
+                                />
                             </div>
 
                             <div className="mt-6">
                                 <label className="flex items-center gap-3 cursor-pointer">
                                     <input
                                         type="checkbox"
-                                        checked={!showShippingAddress}
-                                        onChange={() => setShowShippingAddress(!showShippingAddress)}
+                                        checked={!showBillingAddress}
+                                        onChange={() => setShowBillingAddress(!showBillingAddress)}
                                         className="w-5 h-5 rounded text-[#B76E79] focus:ring-[#B76E79]"
                                     />
-                                    <span className="text-sm font-semibold text-[#2C2C2C]">Ship to billing address</span>
+                                    <span className="text-sm font-semibold text-[#2C2C2C]">Billing address is same as shipping</span>
                                 </label>
                             </div>
                         </div>
 
-                        {/* Separate Shipping Address */}
-                        {showShippingAddress && (
+                        {/* Optional Billing Address */}
+                        {showBillingAddress && (
                             <div className="bg-white rounded-2xl p-[var(--spacing-lg)] shadow-sm animate-fade-in">
-                                <h3 className="font-display text-xl font-bold mb-[var(--spacing-md)]">Shipping Address</h3>
+                                <h3 className="font-display text-xl font-bold mb-[var(--spacing-md)]">Billing Address</h3>
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-[var(--spacing-md)]">
-                                    <div className="space-y-2">
-                                        <label className="text-sm font-semibold text-[#2C2C2C]">First Name</label>
-                                        <input
-                                            type="text"
-                                            name="shippingFirstName"
-                                            value={formData.shippingFirstName}
+                                    <Input
+                                        label="First Name"
+                                        name="firstName"
+                                        value={formData.firstName}
+                                        onChange={handleInputChange}
+                                        error={formErrors.firstName}
+                                        required
+                                    />
+                                    <Input
+                                        label="Last Name"
+                                        name="lastName"
+                                        value={formData.lastName}
+                                        onChange={handleInputChange}
+                                        error={formErrors.lastName}
+                                        required
+                                    />
+                                    <Select
+                                        label="Country/Region"
+                                        name="country"
+                                        value={formData.country}
+                                        onChange={(e) => setFormData(prev => ({ ...prev, country: e.target.value, state: '' }))}
+                                        options={allowedCountries.length > 0 ? allowedCountries.map(c => ({ value: c.code, label: c.name })) : [{ value: 'BD', label: 'Bangladesh' }]}
+                                        placeholder="Select Country"
+                                        required
+                                    />
+                                    {(() => {
+                                        const currentCode = formData.country?.toUpperCase();
+                                        const selectedCountryData = allCountries.find(c => c.code?.toUpperCase() === currentCode);
+                                        if (selectedCountryData?.states?.length > 0) {
+                                            return (
+                                                <Select
+                                                    label="State / District"
+                                                    name="state"
+                                                    value={formData.state}
+                                                    onChange={(e) => setFormData(prev => ({ ...prev, state: e.target.value }))}
+                                                    options={selectedCountryData.states.map((s: any) => ({ value: s.code, label: s.name }))}
+                                                    error={formErrors.state}
+                                                    placeholder="Select State"
+                                                    required
+                                                />
+                                            );
+                                        }
+                                        return (
+                                            <Input
+                                                label="State / District"
+                                                name="state"
+                                                value={formData.state}
+                                                onChange={handleInputChange}
+                                                error={formErrors.state}
+                                                placeholder="Enter State/Province"
+                                                required
+                                            />
+                                        );
+                                    })()}
+                                    <div className="md:col-span-2">
+                                        <Input
+                                            label="Address"
+                                            name="address"
+                                            value={formData.address}
                                             onChange={handleInputChange}
-                                            className="w-full px-4 py-3 bg-[#F9F9F9] border border-transparent rounded-lg focus:bg-white focus:border-[#B76E79] focus:ring-4 focus:ring-[#FFE5E5] transition-all outline-none"
+                                            error={formErrors.address}
+                                            required
                                         />
                                     </div>
-                                    <div className="space-y-2">
-                                        <label className="text-sm font-semibold text-[#2C2C2C]">Last Name</label>
-                                        <input
-                                            type="text"
-                                            name="shippingLastName"
-                                            value={formData.shippingLastName}
-                                            onChange={handleInputChange}
-                                            className="w-full px-4 py-3 bg-[#F9F9F9] border border-transparent rounded-lg focus:bg-white focus:border-[#B76E79] focus:ring-4 focus:ring-[#FFE5E5] transition-all outline-none"
-                                        />
-                                    </div>
-                                    <div className="md:col-span-2 space-y-2">
-                                        <label className="text-sm font-semibold text-[#2C2C2C]">Address</label>
-                                        <input
-                                            type="text"
-                                            name="shippingAddress"
-                                            value={formData.shippingAddress}
-                                            onChange={handleInputChange}
-                                            className="w-full px-4 py-3 bg-[#F9F9F9] border border-transparent rounded-lg focus:bg-white focus:border-[#B76E79] focus:ring-4 focus:ring-[#FFE5E5] transition-all outline-none"
-                                        />
-                                    </div>
-                                    <div className="space-y-2">
-                                        <label className="text-sm font-semibold text-[#2C2C2C]">City</label>
-                                        <input
-                                            type="text"
-                                            name="shippingCity"
-                                            value={formData.shippingCity}
-                                            onChange={handleInputChange}
-                                            className="w-full px-4 py-3 bg-[#F9F9F9] border border-transparent rounded-lg focus:bg-white focus:border-[#B76E79] focus:ring-4 focus:ring-[#FFE5E5] transition-all outline-none"
-                                        />
-                                    </div>
-                                    <div className="space-y-2">
-                                        <label className="text-sm font-semibold text-[#2C2C2C]">Postal Code</label>
-                                        <input
-                                            type="text"
-                                            name="shippingPostcode"
-                                            value={formData.shippingPostcode}
-                                            onChange={handleInputChange}
-                                            className="w-full px-4 py-3 bg-[#F9F9F9] border border-transparent rounded-lg focus:bg-white focus:border-[#B76E79] focus:ring-4 focus:ring-[#FFE5E5] transition-all outline-none"
-                                        />
-                                    </div>
+                                    <Input
+                                        label="City"
+                                        name="city"
+                                        value={formData.city}
+                                        onChange={handleInputChange}
+                                        error={formErrors.city}
+                                        required
+                                    />
+                                    <Input
+                                        label="Postal Code"
+                                        name="postcode"
+                                        value={formData.postcode}
+                                        onChange={handleInputChange}
+                                        error={formErrors.postcode}
+                                        required
+                                    />
                                 </div>
                             </div>
                         )}
 
-                        {/* Shipping Method */}
+                        {/* 3. Shipping Method */}
                         <div className="bg-white rounded-2xl p-[var(--spacing-lg)] shadow-sm">
                             <h3 className="font-display text-xl font-bold mb-6 flex items-center gap-3">
                                 <span className="w-8 h-8 bg-[#FFE5E5] text-[#B76E79] rounded-full flex items-center justify-center text-sm font-bold">3</span>
@@ -454,9 +733,9 @@ export default function CheckoutPage() {
                             <div className="space-y-4 mb-6">
                                 {cartItems.map((item) => (
                                     <div key={getItemKey(item)} className="flex items-center gap-4 py-2">
-                                        <div className="w-16 h-16 bg-[#F5F5F5] rounded-lg overflow-hidden relative border border-gray-100">
-                                            <img src={item.image} className="w-full h-full object-cover" alt={item.name} />
-                                            <span className="absolute top-0 right-0 w-5 h-5 bg-[#B76E79] text-white text-xs flex items-center justify-center rounded-bl-lg">
+                                        <div className="w-16 h-16 bg-[#F5F5F5] rounded-lg overflow-hidden relative border border-gray-100 flex-shrink-0">
+                                            <NextImage src={item.image} fill className="object-cover" alt={item.name} sizes="64px" />
+                                            <span className="absolute top-0 right-0 w-5 h-5 bg-[#B76E79] text-white text-xs flex items-center justify-center rounded-bl-lg z-10">
                                                 {item.quantity}
                                             </span>
                                         </div>
@@ -499,7 +778,7 @@ export default function CheckoutPage() {
                                     {appliedCoupon && (
                                         <div className="flex items-center justify-between bg-green-50 p-2 rounded-lg border border-green-200">
                                             <span className="text-[10px] text-green-700 font-bold">Applied: {appliedCoupon.code}</span>
-                                            <button onClick={() => setAppliedCoupon(null)} className="text-[10px] text-red-500 hover:underline">Remove</button>
+                                            <button onClick={removeCoupon} className="text-[10px] text-red-500 hover:underline">Remove</button>
                                         </div>
                                     )}
                                 </div>
@@ -525,18 +804,13 @@ export default function CheckoutPage() {
                             </div>
 
                             <button
+                                id="sslczPayBtn"
+                                type="button"
                                 onClick={handlePlaceOrder}
-                                disabled={isLoading || isGatewaysLoading || isShippingLoading}
-                                className={`block w-full btn-primary text-center shadow-lg transform transition-all items-center justify-center flex gap-2 ${isLoading ? 'opacity-70 cursor-not-allowed' : 'hover:shadow-xl hover:-translate-y-1'}`}
+                                disabled={isLoading}
+                                className="btn-primary w-full"
                             >
-                                {isLoading ? (
-                                    <>
-                                        <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                                        Processing...
-                                    </>
-                                ) : (
-                                    `Place Order (${formatPrice(total)})`
-                                )}
+                                {isLoading ? "Processing..." : `Place Order`}
                             </button>
 
                             <p className="text-xs text-[#9E9E9E] text-center mt-4 flex items-center justify-center gap-2">
@@ -549,6 +823,6 @@ export default function CheckoutPage() {
                     </div>
                 </div>
             </div>
-        </main>
+        </main >
     );
 }

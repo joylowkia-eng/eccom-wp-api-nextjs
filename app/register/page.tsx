@@ -4,30 +4,45 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/app/context/AuthContext';
+import Input from '@/components/ui/Input';
 
 export default function RegisterPage() {
     const [name, setName] = useState('');
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
-    const [error, setError] = useState('');
+    const [errors, setErrors] = useState<Record<string, string>>({});
     const [isLoading, setIsLoading] = useState(false);
     const router = useRouter();
     const { register } = useAuth();
 
+    const validateForm = () => {
+        const newErrors: Record<string, string> = {};
+        if (!name) newErrors.name = 'Full name is required';
+        if (!email) newErrors.email = 'Email is required';
+        else if (!/\S+@\S+\.\S+/.test(email)) newErrors.email = 'Invalid email format';
+        if (!password) newErrors.password = 'Password is required';
+        else if (password.length < 6) newErrors.password = 'Password must be at least 6 characters';
+
+        setErrors(newErrors);
+        return Object.keys(newErrors).length === 0;
+    };
+
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        setError('');
+        if (!validateForm()) return;
+
+        setErrors({});
         setIsLoading(true);
 
         try {
             const success = await register(name, email, password);
             if (success) {
-                router.push('/account'); // Redirect to account mock
+                router.push('/account');
             } else {
-                setError('Registration failed. Please try again.');
+                setErrors({ form: 'Registration failed. Please try again.' });
             }
         } catch (err) {
-            setError('An error occurred. Please try again.');
+            setErrors({ form: 'An error occurred. Please try again.' });
         } finally {
             setIsLoading(false);
         }
@@ -35,65 +50,55 @@ export default function RegisterPage() {
 
     return (
         <main className="min-h-screen pt-32 pb-[var(--spacing-2xl)] bg-[#FFF8F0]">
-            <div className="container">
+            <div className="container px-4 sm:px-6 lg:px-8">
                 <div className="max-w-md mx-auto bg-white rounded-3xl p-8 md:p-12 shadow-sm">
                     <h1 className="font-display text-3xl font-bold text-center mb-8 text-[#2C2C2C]">Create Account</h1>
 
-                    {error && (
-                        <div className="bg-red-50 text-red-500 text-sm p-4 rounded-xl mb-6 text-center">
-                            {error}
+                    {errors.form && (
+                        <div className="bg-red-50 text-red-500 text-sm p-4 rounded-xl mb-6 text-center animate-fade-in">
+                            {errors.form}
                         </div>
                     )}
 
                     <form onSubmit={handleSubmit} className="space-y-6">
-                        <div>
-                            <label className="block text-sm font-semibold text-[#2C2C2C] mb-2">Full Name</label>
-                            <input
-                                type="text"
-                                value={name}
-                                onChange={(e) => setName(e.target.value)}
-                                required
-                                className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#B76E79]/20 focus:border-[#B76E79] transition-all"
-                                placeholder="Enter your full name"
-                            />
-                        </div>
+                        <Input
+                            label="Full Name"
+                            type="text"
+                            value={name}
+                            onChange={(e) => setName(e.target.value)}
+                            error={errors.name}
+                            placeholder="Enter your full name"
+                            required
+                        />
 
-                        <div>
-                            <label className="block text-sm font-semibold text-[#2C2C2C] mb-2">Email Address</label>
-                            <input
-                                type="email"
-                                value={email}
-                                onChange={(e) => setEmail(e.target.value)}
-                                required
-                                className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#B76E79]/20 focus:border-[#B76E79] transition-all"
-                                placeholder="Enter your email"
-                            />
-                        </div>
+                        <Input
+                            label="Email Address"
+                            type="email"
+                            value={email}
+                            onChange={(e) => setEmail(e.target.value)}
+                            error={errors.email}
+                            placeholder="Enter your email"
+                            required
+                        />
 
-                        <div>
-                            <label className="block text-sm font-semibold text-[#2C2C2C] mb-2">Password</label>
-                            <input
-                                type="password"
-                                value={password}
-                                onChange={(e) => setPassword(e.target.value)}
-                                required
-                                minLength={6}
-                                className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#B76E79]/20 focus:border-[#B76E79] transition-all"
-                                placeholder="Create a password"
-                            />
-                        </div>
+                        <Input
+                            label="Password"
+                            type="password"
+                            value={password}
+                            onChange={(e) => setPassword(e.target.value)}
+                            error={errors.password}
+                            placeholder="Create a password"
+                            required
+                        />
 
                         <button
                             type="submit"
                             disabled={isLoading}
-                            className={`w-full btn-primary flex items-center justify-center ${isLoading ? 'opacity-70 cursor-not-allowed' : ''}`}
+                            className={`w-full btn-primary flex items-center justify-center h-12 ${isLoading ? 'opacity-70 cursor-not-allowed' : 'hover:shadow-lg transform transition-all active:scale-95'}`}
                         >
                             {isLoading ? (
                                 <span className="flex items-center gap-2">
-                                    <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                    </svg>
+                                    <div className="animate-spin h-5 w-5 border-2 border-white border-t-transparent rounded-full"></div>
                                     Creating Account...
                                 </span>
                             ) : (

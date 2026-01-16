@@ -5,6 +5,7 @@ import { gsap } from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import Link from 'next/link';
 import { getCategories, WooCommerceCategory } from '@/lib/woocommerce';
+import NextImage from 'next/image';
 
 gsap.registerPlugin(ScrollTrigger);
 
@@ -113,10 +114,12 @@ export default function Categories() {
                         >
                             {/* Background Image */}
                             <div className="absolute inset-0">
-                                <img
+                                <NextImage
                                     src={category.image}
                                     alt={category.name}
-                                    className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
+                                    fill
+                                    className="object-cover transition-transform duration-700 group-hover:scale-110"
+                                    sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 25vw"
                                 />
                                 <div className={`absolute inset-0 bg-gradient-to-t ${category.color} opacity-60 group-hover:opacity-70 transition-opacity duration-300`}></div>
                             </div>
